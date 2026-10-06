@@ -30,6 +30,6 @@ async def test_example_executes_the_tool_and_returns_the_answer(
     monkeypatch.setattr("agentkit.models.registry.build_provider", lambda *args: fake)
 
     assert await run("What is 17 times 23?", load_config(tmp_path, environ={})) == (
-        "The answer is 391."
+        "The answer is 391.0."
     )
     assert [m.role for m in fake.requests[1].messages] == ["system", "user", "assistant", "tool"]

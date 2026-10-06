@@ -2,7 +2,7 @@
 
 A reusable foundation for building AI agent projects: shared tools, an eval harness, a provider-independent model layer, configuration, guardrails and observability, plus a template for starting new agents.
 
-The design and build order are in [AGENTIC_FRAMEWORK_SPEC.md](AGENTIC_FRAMEWORK_SPEC.md). Milestones M1 (skeleton and configuration) and M2 (model layer: Anthropic, local and fake providers) are implemented; later milestones are not yet.
+The design and build order are in [AGENTIC_FRAMEWORK_SPEC.md](AGENTIC_FRAMEWORK_SPEC.md). Milestones M1 (skeleton and configuration), M2 (model layer: Anthropic, local and fake providers) and M3 (tool contract, registry, executor and five builtin tools) are implemented; later milestones are not yet.
 
 ## Development
 

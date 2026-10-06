@@ -23,13 +23,17 @@ timeouts:
 
 tools:
   enabled: [http_fetch, read_file, calculator]
+  max_tools_per_agent: 20       # selecting more than this for one agent warns
+  max_output_chars: 20000       # longer tool output is truncated, with a marker
   approval:
     default: require            # require | allow | deny
-    overrides:
-      read_file: allow
+    by_side_effects:            # classes not listed here use `default`
+      none: allow
+      read_external: allow
+    overrides: {}               # per tool name; the only way to allow a destructive tool
   settings:
     http_fetch:
-      allowed_domains: []
+      allowed_domains: []       # nothing is fetchable until listed, e.g. ["*.example.com"]; "*" allows all
     filesystem:
       root: ./workspace
 

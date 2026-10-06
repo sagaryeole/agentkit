@@ -70,3 +70,34 @@ def test_models_test_runs_the_fake_model(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "reply:   fake: Reply with the single word: ok" in result.output
     assert "cost:    $0.000000" in result.output
+
+
+def test_tools_list_and_describe(tmp_path: Path) -> None:
+    listed = runner.invoke(app, ["tools", "list", "--project-dir", str(tmp_path)])
+    assert listed.exit_code == 0
+    assert "http_fetch     read_external" in listed.output
+
+    described = runner.invoke(
+        app, ["tools", "describe", "calculator", "--project-dir", str(tmp_path)]
+    )
+    assert described.exit_code == 0
+    assert "side effects: none" in described.output and '"expression"' in described.output
+
+    disabled = runner.invoke(
+        app, ["tools", "describe", "list_files", "--project-dir", str(tmp_path)]
+    )
+    assert disabled.exit_code == 1 and "No tool named 'list_files'" in disabled.output
+
+
+def test_tools_call_prints_what_the_model_would_see(tmp_path: Path) -> None:
+    def call(*args: str) -> object:
+        return runner.invoke(app, ["tools", "call", *args, "--project-dir", str(tmp_path)])
+
+    ok = call("calculator", "--args", '{"expression": "6 * 7"}')
+    assert (ok.exit_code, ok.output.strip()) == (0, "42")  # type: ignore[attr-defined]
+
+    bad = call("calculator", "--args", '{"expression": "import os"}')
+    assert bad.exit_code == 1 and '"kind": "invalid_input"' in bad.output  # type: ignore[attr-defined]
+
+    not_json = call("calculator", "--args", "6 * 7")
+    assert not_json.exit_code == 1 and "must be a JSON object" in not_json.output  # type: ignore[attr-defined]

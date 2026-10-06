@@ -1,6 +1,7 @@
 """The `agentkit` command. Sync wrappers over the kit live here and nowhere else."""
 
 import asyncio
+import json
 import time
 from pathlib import Path
 from typing import Annotated
@@ -14,12 +15,17 @@ from agentkit.errors import AgentKitError, ConfigError
 from agentkit.models import Message, ModelRequest
 from agentkit.models.providers.local import list_local_models
 from agentkit.models.registry import get_model, local_api_base, resolve_chain
+from agentkit.runtime.context import RunContext
+from agentkit.runtime.executor import execute_tool
+from agentkit.tools import ToolRegistry
 
 app = typer.Typer(no_args_is_help=True, help="Build, run and evaluate AI agents.")
 config_app = typer.Typer(no_args_is_help=True, help="Inspect and validate configuration.")
 models_app = typer.Typer(no_args_is_help=True, help="List and test models.")
 app.add_typer(config_app, name="config")
+tools_app = typer.Typer(no_args_is_help=True, help="List, describe and call tools.")
 app.add_typer(models_app, name="models")
+app.add_typer(tools_app, name="tools")
 
 EnvOption = Annotated[
     str | None, typer.Option("--env", help="Environment name; selects agentkit.<env>.yaml.")
@@ -113,6 +119,69 @@ def models_test(
     typer.echo(f"tokens:  {usage.input_tokens} in, {usage.output_tokens} out")
     typer.echo(f"cost:    {cost}")
     typer.echo(f"latency: {time.monotonic() - started:.1f}s")
+
+
+def _registry_or_exit(cfg: Config) -> ToolRegistry:
+    try:
+        return ToolRegistry.from_config(cfg)
+    except AgentKitError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+
+
+@tools_app.command("list")
+def tools_list(env: EnvOption = None, project_dir: ProjectDirOption = Path(".")) -> None:
+    """List the enabled tools with their side effects."""
+    for tool in _registry_or_exit(_load_or_exit(project_dir, env)):
+        summary = tool.description.splitlines()[0]
+        typer.echo(f"{tool.name:<14} {tool.side_effects:<14} {summary}")
+
+
+@tools_app.command("describe")
+def tools_describe(
+    name: Annotated[str, typer.Argument(help="Tool name.")],
+    env: EnvOption = None,
+    project_dir: ProjectDirOption = Path("."),
+) -> None:
+    """Show what the model is told about a tool."""
+    registry = _registry_or_exit(_load_or_exit(project_dir, env))
+    try:
+        tool = registry.get(name)
+    except AgentKitError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+    typer.echo(f"{tool.name}  (side effects: {tool.side_effects}, tags: {', '.join(tool.tags)})")
+    typer.echo(f"\n{tool.description}\n")
+    typer.echo(json.dumps(tool.spec.input_schema, indent=2))
+
+
+@tools_app.command("call")
+def tools_call(
+    name: Annotated[str, typer.Argument(help="Tool name.")],
+    args: Annotated[str, typer.Option("--args", help="Arguments as a JSON object.")] = "{}",
+    env: EnvOption = None,
+    project_dir: ProjectDirOption = Path("."),
+) -> None:
+    """Call a tool the way an agent would and print what the model would see."""
+    cfg = _load_or_exit(project_dir, env)
+    registry = _registry_or_exit(cfg)
+    try:
+        tool = registry.get(name)
+        arguments = json.loads(args)
+        if not isinstance(arguments, dict):
+            raise ValueError("not an object")
+    except AgentKitError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+    except ValueError as exc:
+        typer.echo(
+            f'--args must be a JSON object, for example \'{{"path": "."}}\' ({exc}).', err=True
+        )
+        raise typer.Exit(1) from exc
+    result = asyncio.run(execute_tool(tool, arguments, RunContext(cfg)))
+    typer.echo(result.content)
+    if result.error is not None:
+        raise typer.Exit(1)
 
 
 @app.command()

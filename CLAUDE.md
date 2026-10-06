@@ -20,6 +20,7 @@ uv run agentkit config validate | show    # --env <name>, --project-dir <dir>
 uv run agentkit doctor
 uv run agentkit models list [--local]     # role -> model; --local asks the local server for its IDs
 uv run agentkit models test <role>        # one real call: reply, tokens, cost, latency
+uv run agentkit tools list | describe <tool> | call <tool> --args '{"expression": "6*7"}'
 uv run python examples/single_agent/agent.py "What is 17 times 23?"
 
 # opt-in live tests (skipped when the server or key is absent)
@@ -35,7 +36,8 @@ Milestones are built strictly in order; a milestone does not start until the pre
 
 - **M1 skeleton and config: done.** `config/`, `cli/`, `errors.py`.
 - **M2 model layer: done**, except that the Anthropic provider has never been run against the real API (no credentials were available); its conversion and error mapping are unit-tested only.
-- **M3 tools: next.** The packages `tools`, `guardrails`, `runtime`, `memory`, `observability`, `evals`, `patterns` are docstring-only placeholders. `templates/` and `docs/` do not exist yet. `examples/single_agent/agent.py` is a hand-written loop on the model layer, to be replaced by an `AgentSpec` on the native runtime in M4.
+- **M3 tools: done.** `@tool`, `ToolRegistry`, the tool executor, the approval policy resolver, and five builtins (`calculator`, `current_time`, `read_file`, `list_files`, `http_fetch`). Not yet built from section 9: the other builtin tools (M7), MCP loading, and `docs/writing-tools.md` (M9).
+- **M4 native runtime and guardrails: next.** The packages `memory`, `observability`, `evals`, `patterns` are docstring-only placeholders; `runtime` has only `RunContext` and the executor, `guardrails` only the policy resolver. `templates/` and `docs/` do not exist yet. `examples/single_agent/agent.py` is a hand-written loop on the model layer and tool executor, to be replaced by an `AgentSpec` on the native runtime in M4.
 
 Decisions already made by the owner: name `agentkit`, Python, Apache-2.0, Anthropic as the first hosted provider, LM Studio as the default local server. Still open (spec section 21, ask before building the part that depends on it): `web_search` backend, `run_python` sandbox, trace backend beyond JSONL, whether LangGraph and Claude Agent SDK adapters are wanted.
 
@@ -77,6 +79,18 @@ The intended dependency direction is: `config` ← `models` ← `tools`/`guardra
 - `Model.stream` falls back only before the first event and does not retry or time out.
 - `Usage.input_tokens` is the total including cache reads; cache writes are priced at the plain input rate.
 - Tests drive all of this through `FakeProvider` (scripted replies, exceptions or callables) and `httpx.MockTransport`; pass `sleep=` to `Model` to record backoff instead of waiting.
+
+### Tools (implemented)
+
+`@tool` (`tools/base.py`) turns a function into a `Tool`: the input schema is a Pydantic model built from the type hints (extra arguments forbidden), the description is the docstring up to `Args:`, and each `Args:` entry becomes that argument's schema description. A parameter named `ctx` receives the `RunContext` (`runtime/context.py`) and is hidden from the model. Sync tool functions are fine; they run in a thread.
+
+Every tool call, from any adapter or from `agentkit tools call`, goes through `execute_tool` (`runtime/executor.py`), which never raises: validate arguments, resolve the approval policy, run with a timeout, convert any exception to a `ToolError`, serialise, truncate to `tools.max_output_chars`, and wrap the content in an `<untrusted_content>` block when the tool was declared with `untrusted_output=True`. Budget checks, the real approval channels, output checks (M4) and trace spans (M5) slot into this function in the order given in spec section 11.5.
+
+- Inside a tool, fail by raising `ToolFailure(kind, message)`; the message is addressed to the model and says what to do next. Anything else that escapes becomes kind `internal`.
+- Policy (`guardrails/policy.py`): per-tool `tools.approval.overrides`, then `tools.approval.by_side_effects`, then `tools.approval.default`. Shipped config allows `none` and `read_external` and requires approval for the rest. Until M4 adds approval channels, `require` is answered with a `permission` error, so write tools only run with an explicit `allow` override.
+- A new builtin goes in `tools/builtin/`, is added to `BUILTIN_TOOLS`, and reads its own section of `tools.settings` through a small Pydantic model (see `FilesystemSettings`, `HttpFetchSettings`).
+- File tools must take every path through `resolve_in_root`. `tools.settings.filesystem.root` is relative to the current working directory, not to `--project-dir`.
+- `http_fetch` fetches nothing until `allowed_domains` is set. It resolves the host itself, refuses unless every address is public, then connects to that checked address (with the original `Host` header and TLS server name) so a second DNS answer cannot redirect it; each redirect hop is checked the same way. Tests replace `_resolve` and `_client` in that module; note that `agentkit.tools.builtin.http_fetch` as an attribute is the tool, so get the module from `sys.modules`.
 
 ## Gotchas
 

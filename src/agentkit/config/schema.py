@@ -9,6 +9,7 @@ from typing import Any, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ApprovalPolicy = Literal["require", "allow", "deny"]
+SideEffects = Literal["none", "read_external", "write", "destructive"]
 
 
 class _Section(BaseModel):
@@ -93,11 +94,14 @@ class Timeouts(_Section):
 
 class ToolApproval(_Section):
     default: ApprovalPolicy
-    overrides: dict[str, ApprovalPolicy] = {}
+    by_side_effects: dict[SideEffects, ApprovalPolicy] = {}
+    overrides: dict[str, ApprovalPolicy] = {}  # by tool name
 
 
 class Tools(_Section):
     enabled: list[str]
+    max_tools_per_agent: int = Field(ge=1)  # more than this triggers a warning
+    max_output_chars: int = Field(ge=1)  # longer tool output is truncated
     approval: ToolApproval
     # Per-tool settings, validated by the tool that reads them.
     settings: dict[str, dict[str, Any]] = {}
