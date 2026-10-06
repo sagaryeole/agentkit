@@ -264,7 +264,6 @@ To run an agent on Google ADK instead of the kit's own loop, install the `adk` e
 - The Anthropic, OpenAI and Gemini providers are covered by unit tests but have not been exercised against the live APIs. The local-model path has.
 - Conversations and context trimming work on the kit's own runtime only, not on the ADK adapter.
 - Not built: a tool that executes code, and an OTLP trace exporter.
-- Tools from MCP servers open a new connection per call, so servers that keep state between calls are not supported well.
 
 ## Development
 

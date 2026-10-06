@@ -138,6 +138,7 @@ tools:
       pass_env: [DOCS_API_KEY]                   # environment variables it may see
       side_effects:
         search: read_external                    # by the server's own tool names
+      timeout_seconds: 30                        # per call; default timeouts.tool_call_seconds
     tracker:
       url: https://mcp.example.com/mcp           # or a remote server, over HTTP
       headers_env: { Authorization: TRACKER_AUTH_HEADER }
@@ -152,7 +153,7 @@ What applies to them:
 - **Arguments are checked against the server's schema** before anything is sent, and approvals, timeouts, truncation, budgets and tracing work as for any tool.
 - **Their descriptions come from the server** and go into the model's prompt. Only connect servers you trust; a malicious description is a prompt injection.
 - **A local server sees a minimal environment** plus the variables named in `pass_env`.
-- **Each call opens its own connection.** A local server is started for the call and stopped after it, so servers that keep state between calls will not work as intended, and slow-starting servers make every call slow.
+- **The connection is kept open.** A server is connected the first time it is needed and stays connected until the process exits, so a local server starts once and can keep state between calls, including across the messages of `agentkit chat`. If a call fails because the server has gone away, that call returns a retryable error and the next call reconnects. Set `keep_alive: false` on a server to connect afresh for every call instead.
 - **In evals** they follow the usual rule: they need a fixture, or `--live`.
 
 ## What `ctx` gives you

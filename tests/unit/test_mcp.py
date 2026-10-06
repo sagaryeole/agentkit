@@ -1,6 +1,9 @@
 """MCP tools, against a real MCP server started as a local subprocess. No network."""
 
+import asyncio
+import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +20,7 @@ from agentkit.runtime.context import RunContext
 from agentkit.runtime.executor import execute_tool
 from agentkit.runtime.spec import AgentSpec
 from agentkit.tools import ToolRegistry
+from agentkit.tools.mcp import close_mcp_connections
 from tests.unit.helpers import config, scripted_adapter, tool_calls
 
 SERVER = '''
@@ -38,6 +42,31 @@ def lookup(word: str) -> str:
 def store(key: str, value: int = 1) -> str:
     """Store a value."""
     return f"stored {key}={value} token={os.environ.get('GLOSSARY_TOKEN', 'none')}"
+
+
+CALLS = 0
+
+
+@server.tool()
+def count() -> str:
+    """Count the calls this server process has seen."""
+    global CALLS
+    CALLS += 1
+    return f"{CALLS} in process {os.getpid()}"
+
+
+@server.tool()
+async def nap(seconds: float) -> str:
+    """Sleep."""
+    import asyncio
+    await asyncio.sleep(seconds)
+    return "rested"
+
+
+@server.tool()
+def die() -> str:
+    """Kill the server."""
+    os._exit(1)
 
 
 if __name__ == "__main__":
@@ -70,7 +99,7 @@ def test_mcp_tools_join_the_registry_with_safe_defaults(
     assert store.side_effects == "write"  # not declared, so treated as risky
     assert lookup.untrusted_output and store.untrusted_output
     assert lookup.tags == ("mcp", "glossary")
-    assert registry.select(tags=["mcp"]) == [lookup, store]
+    assert registry.select(tags=["mcp"])[:2] == [lookup, store]
 
 
 async def test_mcp_calls_take_the_same_path_as_any_tool(
@@ -167,4 +196,103 @@ def test_mcp_configuration_errors(tmp_path: Path) -> None:
 def test_a_server_can_be_loaded_in_code(tmp_path: Path, server: dict[str, Any]) -> None:
     registry = ToolRegistry()
     tools = registry.load_mcp("glossary", McpServer(**server))
-    assert [t.name for t in tools] == ["glossary_lookup", "glossary_store_entry"]
+    assert [t.name for t in tools][:2] == ["glossary_lookup", "glossary_store_entry"]
+
+
+# persistent connections
+
+
+def alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def counted(result: Any) -> tuple[int, int]:
+    """(call number, server process id) from the count tool's reply."""
+    number, _, pid = str(result.output).partition(" in process ")
+    return int(number), int(pid)
+
+
+def free(server: dict[str, Any]) -> dict[str, Any]:
+    harmless = {name: "none" for name in ("lookup", "count", "nap", "die")}
+    return {**server, "side_effects": harmless}
+
+
+def test_one_connection_serves_every_call_across_event_loops(
+    tmp_path: Path, server: dict[str, Any]
+) -> None:
+    cfg = with_server(tmp_path, free(server))
+    count = ToolRegistry.from_config(cfg).get("glossary_count")
+
+    async def once() -> tuple[int, int]:
+        return counted(await execute_tool(count, {}, RunContext(cfg)))
+
+    # each asyncio.run is a new event loop, as each message of `agentkit chat` is
+    first, second, third = (asyncio.run(once()) for _ in range(3))
+    assert [first[0], second[0], third[0]] == [1, 2, 3]  # the server kept its state
+    assert first[1] == second[1] == third[1]  # and is the same process
+
+    # a second registry for the same server reuses the connection
+    again = ToolRegistry.from_config(cfg).get("glossary_count")
+    fourth = counted(asyncio.run(execute_tool(again, {}, RunContext(cfg))))
+    assert fourth == (4, first[1])
+
+    close_mcp_connections()
+    for _ in range(50):
+        if not alive(first[1]):
+            break
+        time.sleep(0.1)
+    assert not alive(first[1])  # closing stops the server it started
+
+    reopened = counted(asyncio.run(execute_tool(count, {}, RunContext(cfg))))
+    assert reopened[0] == 1 and reopened[1] != first[1]  # usable again, with a new server
+
+
+async def test_keep_alive_false_reconnects_for_every_call(
+    tmp_path: Path, server: dict[str, Any]
+) -> None:
+    cfg = with_server(tmp_path, {**free(server), "keep_alive": False})
+    count = ToolRegistry.from_config(cfg).get("glossary_count")
+    ctx = RunContext(cfg)
+    first = counted(await execute_tool(count, {}, ctx))
+    second = counted(await execute_tool(count, {}, ctx))
+    assert first[0] == second[0] == 1 and first[1] != second[1]
+
+
+async def test_a_dead_server_fails_one_call_and_the_next_reconnects(
+    tmp_path: Path, server: dict[str, Any]
+) -> None:
+    cfg = with_server(tmp_path, free(server))
+    registry = ToolRegistry.from_config(cfg)
+    ctx = RunContext(cfg)
+    before = counted(await execute_tool(registry.get("glossary_count"), {}, ctx))
+
+    killed = await execute_tool(registry.get("glossary_die"), {}, ctx)
+    assert killed.error is not None
+    assert (killed.error.kind, killed.error.retryable) == ("transient", True)
+
+    after = counted(await execute_tool(registry.get("glossary_count"), {}, ctx))
+    assert after[0] == 1 and after[1] != before[1]
+
+
+async def test_calls_overlap_on_one_connection_and_a_timeout_leaves_it_usable(
+    tmp_path: Path, server: dict[str, Any]
+) -> None:
+    cfg = with_server(tmp_path, {**free(server), "timeout_seconds": 0.5})
+    registry = ToolRegistry.from_config(cfg)
+    nap, count = registry.get("glossary_nap"), registry.get("glossary_count")
+    ctx = RunContext(cfg, budget=None)  # type: ignore[arg-type]
+
+    started = time.monotonic()
+    results = await asyncio.gather(*(execute_tool(nap, {"seconds": 0.2}, ctx) for _ in range(4)))
+    assert all(r.output == "rested" for r in results)
+    assert time.monotonic() - started < 0.7  # together, not one after another
+
+    before = counted(await execute_tool(count, {}, ctx))
+    slow = await execute_tool(nap, {"seconds": 5}, ctx)
+    assert slow.error is not None and slow.error.kind == "timeout"
+    after = counted(await execute_tool(count, {}, ctx))
+    assert after == (before[0] + 1, before[1])  # same server, still answering

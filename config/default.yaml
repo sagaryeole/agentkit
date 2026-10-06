@@ -49,6 +49,7 @@ tools:
   #   docs:
   #     command: ["python", "servers/docs.py"]   # or url: https://mcp.example.com/mcp
   #     side_effects: { search: read_external }
+  #     keep_alive: true        # one connection for the life of the process (default)
 
 guardrails:
   approval_channel: cli         # cli | callback | auto_deny | auto_approve (tests only)

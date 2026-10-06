@@ -110,6 +110,8 @@ class McpServer(_Section):
     # Side effects per tool, by the server's tool name. A tool not listed is `write`.
     side_effects: dict[str, SideEffects] = {}
     timeout_seconds: float | None = Field(default=None, gt=0)
+    # Keep one connection open for the life of the process. False reconnects for every call.
+    keep_alive: bool = True
 
     @model_validator(mode="after")
     def _one_transport(self) -> Self:
