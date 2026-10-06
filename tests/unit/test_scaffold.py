@@ -40,7 +40,12 @@ def test_new_project_passes_its_starter_evals_immediately(tmp_path: Path) -> Non
 
     assert runner.invoke(app, ["config", "validate", "--project-dir", str(root)]).exit_code == 0
     listed = runner.invoke(app, ["tools", "list", "--project-dir", str(root)])
-    assert "calculator" in listed.output
+    assert "calculator" in listed.output and "word_count" in listed.output  # project tools too
+    called = runner.invoke(
+        app,
+        ["tools", "call", "word_count", "--args", '{"text": "a b c"}', "--project-dir", str(root)],
+    )
+    assert (called.exit_code, called.output.strip()) == (0, "3")
 
 
 def test_the_generated_project_tests_pass(tmp_path: Path) -> None:

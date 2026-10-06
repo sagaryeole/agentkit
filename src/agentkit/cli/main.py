@@ -134,9 +134,10 @@ def models_test(
     typer.echo(f"latency: {time.monotonic() - started:.1f}s")
 
 
-def _registry_or_exit(cfg: Config) -> ToolRegistry:
+def _registry_or_exit(cfg: Config, project_dir: Path) -> ToolRegistry:
+    """The enabled builtin tools plus the tools the project defines."""
     try:
-        return ToolRegistry.from_config(cfg)
+        return load_project(project_dir, cfg).registry
     except AgentKitError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(1) from exc
@@ -144,8 +145,8 @@ def _registry_or_exit(cfg: Config) -> ToolRegistry:
 
 @tools_app.command("list")
 def tools_list(env: EnvOption = None, project_dir: ProjectDirOption = Path(".")) -> None:
-    """List the enabled tools with their side effects."""
-    for tool in _registry_or_exit(_load_or_exit(project_dir, env)):
+    """List the enabled builtin tools and the project's own, with their side effects."""
+    for tool in _registry_or_exit(_load_or_exit(project_dir, env), project_dir):
         summary = tool.description.splitlines()[0]
         typer.echo(f"{tool.name:<14} {tool.side_effects:<14} {summary}")
 
@@ -157,7 +158,7 @@ def tools_describe(
     project_dir: ProjectDirOption = Path("."),
 ) -> None:
     """Show what the model is told about a tool."""
-    registry = _registry_or_exit(_load_or_exit(project_dir, env))
+    registry = _registry_or_exit(_load_or_exit(project_dir, env), project_dir)
     try:
         tool = registry.get(name)
     except AgentKitError as exc:
@@ -177,7 +178,7 @@ def tools_call(
 ) -> None:
     """Call a tool the way an agent would and print what the model would see."""
     cfg = _load_or_exit(project_dir, env)
-    registry = _registry_or_exit(cfg)
+    registry = _registry_or_exit(cfg, project_dir)
     try:
         tool = registry.get(name)
         arguments = json.loads(args)

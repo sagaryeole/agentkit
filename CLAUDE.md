@@ -39,15 +39,16 @@ CI (`.github/workflows/ci.yml`) runs ruff, mypy, pytest, the smoke evals of ever
 
 Milestones are built strictly in order; a milestone does not start until the previous one meets its acceptance criteria in spec section 17.
 
-- **M1–M8: done**, with these gaps:
+- **M1–M9: done**, with these gaps:
   - The Anthropic, OpenAI and Google providers have never been run against the real APIs (no credentials were available). Their request building and error mapping are unit-tested only. The Google provider goes through Gemini's OpenAI-compatible endpoint rather than its native API.
   - The ADK adapter has been run live only against a local model through LiteLLM. Its Gemini and Anthropic mappings are checked by a unit test, not by a call.
   - `web_search` (SearXNG) has only been tested against a mocked server.
   - `exporter: otlp` is rejected; only `jsonl`, `console` and `none` ship.
   - Of the eight patterns in spec section 15, single agent, fixed workflow, router, hand-off and human in the loop exist. Planner/executor, parallel fan-out and evaluator/reviser are not built (M8's acceptance criteria name only router, workflow and human in the loop).
+  - `SECURITY.md` has no contact address for reports yet.
   - Dropped or deferred by the owner: `run_python` (dropped for now), MCP tool loading, LangGraph and Claude Agent SDK adapters.
   - Not assigned to any milestone in the spec and not built: `SessionStore`, context-window management (section 12.4), and `agentkit chat`. Only the `StateStore` half of section 12 exists. Trimming history needs care with Claude models, which reject edited history that contains thinking blocks.
-- **M9 documentation: next.** `docs/` does not exist yet.
+- Documentation lives in `README.md`, `docs/patterns.md`, `docs/writing-tools.md`, `docs/writing-evals.md` and `SECURITY.md`. They describe behaviour precisely (defaults, exit codes, which tools run in evals), so a change to that behaviour needs the matching doc changed. The README's walk-through was verified by following it; re-run it after changing the CLI or the template.
 
 Decisions made by the owner: name `agentkit`, Python, Apache-2.0, Anthropic first, LM Studio as the default local server, SearXNG for `web_search`, ADK as the only library adapter.
 
@@ -73,7 +74,7 @@ Dependency direction: `config` ← `models` ← `tools`/`guardrails`/`observabil
 - The result is one Pydantic model (`config/schema.py`), `extra="forbid"` everywhere, so an unknown key from any layer, including a stray `AGENTKIT_*` variable, is a `ConfigError`.
 - Schema fields mostly have no Python default on purpose: `config/default.yaml` is the single place defaults live. A new config key needs both a schema field and a default there.
 - The shipped YAML and the project template sit in top-level `config/` and `templates/`. The wheel force-includes them as `agentkit/_shipped_config` and `agentkit/_templates`; the lookup functions check there first and fall back to the checkout.
-- Paths in config (`filesystem.root`, `jsonl_path`, `results_dir`, `cassette_dir`) are relative to the current working directory, not to `--project-dir`. Prompt files and eval fixtures are relative to the project.
+- Relative paths in config (`observability.jsonl_path`, the three `evals.*_dir`, `filesystem.root`, `sql_query.database`) are made absolute against the project directory by `_anchor_paths` when the config loads, so a command behaves the same from inside the project and with `--project-dir`. A new path-valued setting must be added there. Prompt files and eval fixtures are relative to the project too.
 - Secrets come from the environment, never from YAML. Any new variable the kit reads must be added to `.env.example`.
 
 ### Model layer
@@ -147,5 +148,5 @@ The example projects under `examples/` and the template under `templates/agent/`
 ## Gotchas
 
 - `ruff format` rewrites Python code blocks inside Markdown. `*.md` is excluded in `pyproject.toml` so the spec's snippets stay as written; keep that exclusion.
-- Tests run in a temporary working directory (`tests/conftest.py`), because traces and eval results are written relative to it.
+- Tests run in a temporary working directory (`tests/conftest.py`), so anything written relative to it never lands in the repository.
 - Template files use `__AGENT_NAME__` and `__PROJECT_NAME__` as placeholders, not `{{...}}`, which is the prompt-variable syntax. `templates/router` and `templates/workflow` are overlays copied over `templates/agent`; they mirror `examples/router` and `examples/workflow`, so change both.

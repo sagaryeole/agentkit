@@ -483,7 +483,7 @@ def test_eval_cli_thresholds(
     args = ["--project-dir", str(root)]
     good = runner.invoke(app, ["eval", "run", *args])
     assert good.exit_code == 0, good.output
-    baseline = sorted((tmp_path / ".agentkit" / "evals").glob("*.json"))[0].stem
+    baseline = sorted((root / ".agentkit" / "evals").glob("*.json"))[0].stem
 
     suite = (
         (root / "evals" / "support.yaml").read_text().replace('regex: "not found"', "regex: nope")

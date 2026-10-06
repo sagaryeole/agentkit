@@ -90,3 +90,16 @@ def test_invalid_yaml_is_a_config_error(tmp_path: Path) -> None:
     write(tmp_path / "agentkit.yaml", "limits: [unclosed\n")
     with pytest.raises(ConfigError, match="invalid YAML"):
         load_config(tmp_path, environ={})
+
+
+def test_relative_paths_are_anchored_to_the_project_directory(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    write(project / "agentkit.yaml", "tools: {settings: {sql_query: {database: data/shop.db}}}\n")
+    cfg = load_config(project, environ={"AGENTKIT_EVALS__RESULTS_DIR": "/var/results"})
+    assert cfg.observability.jsonl_path == str(project / ".agentkit/traces")
+    assert cfg.evals.dataset_dir == str(project / "evals")
+    assert cfg.evals.cassette_dir == str(project / "evals/cassettes")
+    assert cfg.evals.results_dir == "/var/results"  # absolute paths are left alone
+    assert cfg.tools.settings["filesystem"]["root"] == str(project / "workspace")
+    assert cfg.tools.settings["sql_query"]["database"] == str(project / "data/shop.db")

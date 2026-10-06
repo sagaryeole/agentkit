@@ -79,6 +79,23 @@ def env_overrides(environ: Mapping[str, str]) -> dict[str, Any]:
     return result
 
 
+def _anchor_paths(cfg: Config, root: Path) -> Config:
+    """Make relative paths in the config relative to the project directory, so a command
+    behaves the same whether it is run inside the project or with --project-dir."""
+
+    def anchored(value: str) -> str:
+        return value if Path(value).is_absolute() else str(root / value)
+
+    cfg.observability.jsonl_path = anchored(cfg.observability.jsonl_path)
+    for name in ("dataset_dir", "results_dir", "cassette_dir"):
+        setattr(cfg.evals, name, anchored(getattr(cfg.evals, name)))
+    for section, key in (("filesystem", "root"), ("sql_query", "database")):
+        settings = cfg.tools.settings.get(section)
+        if settings and isinstance(settings.get(key), str):
+            settings[key] = anchored(settings[key])
+    return cfg
+
+
 def load_config(
     project_dir: Path | None = None,
     *,
@@ -113,7 +130,7 @@ def load_config(
         merged = deep_merge(merged, layer)
 
     try:
-        return Config.model_validate(merged)
+        return _anchor_paths(Config.model_validate(merged), root)
     except ValidationError as exc:
         problems = "\n".join(
             f"  {'.'.join(str(p) for p in err['loc']) or '<root>'}: {err['msg']}"
