@@ -1,0 +1,61 @@
+# Model catalogue and role aliases. Loaded as the `models` section of the config.
+# This is the only file where model IDs may be written down; verify them with
+# each provider before relying on them.
+
+# Set to `local` (or export MODEL_PROVIDER=local) to move every hosted role to
+# the local model below. <AGENT_NAME>_MODEL_PROVIDER overrides it for one agent.
+provider: null
+
+roles:
+  default: anthropic/claude-sonnet-5-5
+  fast: anthropic/claude-haiku-4-5
+  reasoning: anthropic/claude-opus-5-5
+  judge: anthropic/claude-sonnet-5-5   # used by eval graders
+
+# Ordered models tried when a role's model still fails after retries.
+fallbacks: {}
+
+local:
+  server: lmstudio              # lmstudio | ollama | custom
+  # api_base: http://127.0.0.1:1234/v1   # defaults from `server`; LOCAL_API_BASE overrides
+  request_timeout_seconds: 300  # local generation is slower
+
+models:
+  anthropic/claude-sonnet-5-5:
+    provider: anthropic
+    model_id: claude-sonnet-5-5
+    defaults: { max_output_tokens: 16000 }
+    capabilities:
+      forced_tool_choice: false
+      context_window: 1000000
+      max_output_tokens: 128000
+  anthropic/claude-haiku-4-5:
+    provider: anthropic
+    model_id: claude-haiku-4-5
+    defaults: { max_output_tokens: 16000 }
+    capabilities:
+      context_window: 200000
+      max_output_tokens: 64000
+  anthropic/claude-opus-5-5:
+    provider: anthropic
+    model_id: claude-opus-5-5
+    defaults: { max_output_tokens: 16000 }
+    capabilities:
+      forced_tool_choice: false
+      context_window: 1000000
+      max_output_tokens: 128000
+
+  # The model that hosted roles are remapped to when the provider switch is `local`.
+  local/default:
+    provider: local
+    model_id: ""                # set here or with LOCAL_MODEL_ID; `agentkit models list --local` shows the IDs
+    capabilities:               # local models differ widely, so declare what yours supports
+      tools: true
+      structured_output: false
+      vision: false
+      context_window: 8192
+
+  # Scripted provider for tests and evals: no network, no key.
+  fake/default:
+    provider: fake
+    model_id: fake

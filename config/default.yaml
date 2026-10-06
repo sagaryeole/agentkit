@@ -1,0 +1,52 @@
+# Shipped defaults. Every key here can be overridden by a project's agentkit.yaml,
+# agentkit.<env>.yaml, AGENTKIT_* environment variables, or arguments in code.
+# The `models` section is loaded from models.yaml.
+
+env: dev
+
+limits:
+  max_steps: 25                 # model turns per run
+  max_tool_calls: 50
+  max_input_tokens: 500000
+  max_output_tokens: 50000
+  max_cost_usd: 2.00
+  max_wall_seconds: 300
+
+retry:
+  max_attempts: 3
+  base_delay_seconds: 1.0
+  max_delay_seconds: 30.0
+
+timeouts:
+  model_call_seconds: 120
+  tool_call_seconds: 60
+
+tools:
+  enabled: [http_fetch, read_file, calculator]
+  approval:
+    default: require            # require | allow | deny
+    overrides:
+      read_file: allow
+  settings:
+    http_fetch:
+      allowed_domains: []
+    filesystem:
+      root: ./workspace
+
+guardrails:
+  approval_channel: cli         # cli | callback | auto_deny | auto_approve (tests only)
+  redact_patterns: [email, api_key]
+
+observability:
+  exporter: jsonl               # jsonl | otlp | console | none
+  jsonl_path: ./.agentkit/traces
+  log_level: INFO
+  capture_content: true         # false stores metadata only
+
+evals:
+  dataset_dir: ./evals
+  concurrency: 4
+  judge_role: judge
+
+runtime:
+  adapter: native               # native | adk | langgraph | claude_sdk

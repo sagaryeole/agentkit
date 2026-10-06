@@ -1,0 +1,10 @@
+.env
+.venv/
+.agentkit/
+__pycache__/
+*.egg-info/
+dist/
+.coverage
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
