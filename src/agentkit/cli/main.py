@@ -3,6 +3,7 @@
 import asyncio
 import json
 import time
+import uuid
 from pathlib import Path
 from typing import Annotated
 
@@ -18,6 +19,7 @@ from agentkit.evals.dataset import load_suites
 from agentkit.evals.report import all_attempts, compare, pass_rate, render_comparison, render_report
 from agentkit.evals.runner import load_run, run_suites, save_run
 from agentkit.guardrails.approvals import make_channel
+from agentkit.memory import make_stores
 from agentkit.models import Message, ModelRequest
 from agentkit.models.providers.local import list_local_models
 from agentkit.models.registry import get_model, local_api_base, resolve_chain
@@ -27,6 +29,7 @@ from agentkit.runtime.adapters import get_adapter
 from agentkit.runtime.context import RunContext
 from agentkit.runtime.executor import execute_tool
 from agentkit.runtime.project import load_project
+from agentkit.runtime.session import stream_in_session
 from agentkit.runtime.spec import RunResult
 from agentkit.tools import ToolRegistry
 
@@ -263,6 +266,74 @@ def run(
     typer.echo(run_summary(result), err=True)
     if result.stop_reason != "completed":
         raise typer.Exit(1)
+
+
+@app.command()
+def chat(
+    agent: Annotated[str, typer.Argument(help="Name of an agent defined in agents/.")],
+    session: Annotated[
+        str | None, typer.Option("--session", help="Session to continue; default: a new one.")
+    ] = None,
+    env: EnvOption = None,
+    project_dir: ProjectDirOption = Path("."),
+) -> None:
+    """Talk to an agent. The conversation is kept, so it can be continued later."""
+    cfg = _load_or_exit(project_dir, env)
+    try:
+        project = load_project(project_dir, cfg)
+        spec = project.agent(agent)
+        adapter = get_adapter(cfg, project.registry, project.root, agents=project.agents)
+        sessions, state = make_stores(cfg)
+    except AgentKitError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+    session_id = session or uuid.uuid4().hex[:12]
+    known = len(sessions.load(session_id))
+    typer.echo(
+        f"Session {session_id}"
+        + (f" ({known} earlier messages)" if known else "")
+        + ". Type /reset to forget the conversation, /exit to leave.",
+        err=True,
+    )
+
+    async def turn(text: str) -> RunResult:
+        ctx = RunContext(cfg, session_id=session_id, approvals=make_channel(cfg), state=state)
+        result = None
+        async for event in stream_in_session(adapter, spec, text, ctx, sessions):
+            if event.type == "tool_call" and event.tool_call is not None:
+                call = event.tool_call
+                typer.echo(f"  [{call.name} {json.dumps(call.arguments)[:100]}]", err=True)
+            result = event.result or result
+        assert result is not None
+        return result
+
+    while True:
+        try:
+            text = input("you> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if text == "/exit":
+            break
+        if text == "/reset":
+            sessions.truncate(session_id)
+            typer.echo("The conversation was forgotten.", err=True)
+            continue
+        if not text:
+            continue
+        try:
+            result = asyncio.run(turn(text))
+        except AgentKitError as exc:
+            typer.echo(str(exc), err=True)
+            continue
+        output = result.output
+        if output is not None:
+            typer.echo(
+                output if isinstance(output, str) else json.dumps(to_jsonable_python(output))
+            )
+        if result.error is not None:
+            typer.echo(f"{result.error.kind}: {result.error.message}", err=True)
+        typer.echo(run_summary(result), err=True)
+    typer.echo(f"Continue later with: agentkit chat {agent} --session {session_id}", err=True)
 
 
 @app.command()

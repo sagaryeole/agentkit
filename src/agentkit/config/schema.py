@@ -134,6 +134,20 @@ class Evals(_Section):
     max_pass_rate_drop: float = Field(ge=0)  # `eval compare` fails beyond this drop, in points
 
 
+class ContextSettings(_Section):
+    """What to do when a conversation nears the model's context window."""
+
+    strategy: Literal["off", "drop_tool_results", "summarize"]
+    trigger_ratio: float = Field(gt=0, le=1)  # act at this share of the context window
+    keep_recent_messages: int = Field(ge=1)  # the newest messages are never touched
+
+
+class Memory(_Section):
+    store: Literal["memory", "sqlite"]  # where sessions and state are kept
+    sqlite_path: str
+    context: ContextSettings
+
+
 class Runtime(_Section):
     adapter: Literal["native", "adk", "langgraph", "claude_sdk"]
 
@@ -149,6 +163,7 @@ class Config(_Section):
     guardrails: Guardrails
     observability: Observability
     evals: Evals
+    memory: Memory
     runtime: Runtime
 
     @model_validator(mode="after")

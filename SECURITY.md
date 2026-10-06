@@ -46,7 +46,7 @@ What the kit does:
 - Falling back from a local model to a hosted one is off unless configured on a role mapped to a local model, so data does not leave the machine implicitly.
 - Secrets come from the environment, never from YAML. Before a trace is written, the values of secret-looking environment variables and anything matching `guardrails.redact_patterns` are redacted. `observability.capture_content: false` stores metadata only.
 
-What remains: an allowed domain that reflects or stores what it is sent, `web_search` queries (which go to the configured search service), and project tools that send data out. Setting `allowed_domains` to `*` removes the main protection. Redaction applies to traces; by default it does not change what the model sees.
+What remains: conversation history and session notes are stored unredacted in the project's `.agentkit/memory.db`, so protect that file like the data it holds; an allowed domain that reflects or stores what it is sent, `web_search` queries (which go to the configured search service), and project tools that send data out. Setting `allowed_domains` to `*` removes the main protection. Redaction applies to traces; by default it does not change what the model sees.
 
 ### 4. Runaway cost
 

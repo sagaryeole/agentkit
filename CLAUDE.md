@@ -24,6 +24,7 @@ uv run agentkit tools list | describe <tool> | call <tool> --args '{"expression"
 uv run agentkit new <name> [--pattern single|router|workflow] [--dir <parent>]
 uv run agentkit run <agent or workflow> "<input>" [--model <role>] --project-dir examples/single_agent
 AGENTKIT_RUNTIME__ADAPTER=adk uv run agentkit run ...     # same agent on Google ADK
+uv run agentkit chat <agent> [--session <id>]
 uv run agentkit trace <run id>
 uv run agentkit eval run [path] [--tags smoke] [--repeat N] [--live] [--record | --replay]
 uv run agentkit eval report [run] | compare <baseline> <candidate>
@@ -47,7 +48,7 @@ Milestones are built strictly in order; a milestone does not start until the pre
   - Of the eight patterns in spec section 15, single agent, fixed workflow, router, hand-off and human in the loop exist. Planner/executor, parallel fan-out and evaluator/reviser are not built (M8's acceptance criteria name only router, workflow and human in the loop).
   - `SECURITY.md` has no contact address for reports yet.
   - Dropped or deferred by the owner: `run_python` (dropped for now), MCP tool loading, LangGraph and Claude Agent SDK adapters.
-  - Not assigned to any milestone in the spec and not built: `SessionStore`, context-window management (section 12.4), and `agentkit chat`. Only the `StateStore` half of section 12 exists. Trimming history needs care with Claude models, which reject edited history that contains thinking blocks.
+  - Sessions, context trimming and `agentkit chat` exist for the native adapter only. The ADK adapter takes a string and keeps no history.
 - Documentation lives in `README.md`, `docs/patterns.md`, `docs/writing-tools.md`, `docs/writing-evals.md` and `SECURITY.md`. They describe behaviour precisely (defaults, exit codes, which tools run in evals), so a change to that behaviour needs the matching doc changed. The README's walk-through was verified by following it; re-run it after changing the CLI or the template.
 
 Decisions made by the owner: name `agentkit`, Python, Apache-2.0, Anthropic first, LM Studio as the default local server, SearXNG for `web_search`, ADK as the only library adapter.
@@ -114,6 +115,16 @@ Every tool call, from any adapter, an eval or `agentkit tools call`, goes throug
 - Setup mistakes (unknown tool name, an undefined sub-agent, a model without tool calling for an agent with tools, a missing prompt file) raise `AgentKitError` instead of returning a result.
 - `load_project` (`runtime/project.py`) imports a project's `tools/*.py` and `agents/*.py` as `tools.x` / `agents.x`, collecting `Tool`s, `AgentSpec`s, `Workflow`s and Pydantic models. It first drops those names, and every module imported from the previously loaded project, from `sys.modules`, so one process can load several projects, one at a time.
 - `AgentSpec.instructions` is prompt text or a path to a prompt file under the project; `{{name}}` placeholders are filled from `AgentSpec.variables`.
+
+### Sessions and context
+
+`memory/` holds two stores, each with an in-memory and a SQLite implementation chosen by `memory.store` (`make_stores`): `StateStore` (key-value, what `remember`/`recall` use through `ctx.state`) and `SessionStore` (conversation history).
+
+- A conversation is a sequence of ordinary runs. `stream_in_session` (`runtime/session.py`) loads the history, runs the adapter on history plus the new user message, and appends the turn. A turn that does not complete is stored as the user message and a one-line note, so a half-finished tool round never enters the history. `agentkit chat` is a loop around it.
+- `storable` decides what is saved: no system messages (each run adds its own prompt, and a hand-off's sub-agent prompt must not leak into later turns) and no `OpaquePart`s.
+- Context trimming (`memory/context.py`): before every model call the native loop asks `ContextManager.view` for the messages to send. While the estimated size is under `memory.context.trigger_ratio` of the model's declared `context_window`, that is the transcript itself. Beyond it, the view is a copy: `drop_tool_results` blanks the oldest tool results, `summarize` replaces everything before a recent user message with a summary from the `fast` role (cached, extended as the conversation grows, counted in the budget but not as a step). `RunResult.messages` and the session store always hold the full transcript.
+- Thinking blocks and edited history: Claude rejects a replayed thinking block when the history before it has changed. So any trimmed view has every `OpaquePart` removed, and none are stored across turns. Inside one untrimmed run they are replayed unchanged, as the API requires. Keep that rule if you change either place.
+- The size estimate is four characters per token (`estimate_tokens`), not a provider count.
 
 ### Patterns
 

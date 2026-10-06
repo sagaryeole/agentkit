@@ -42,6 +42,10 @@ class Budget:
         self.steps += 1
         self.usage = self.usage.plus(usage)
 
+    def record_usage(self, usage: Usage) -> None:
+        """Count tokens and cost of a model call that is not a step of the agent."""
+        self.usage = self.usage.plus(usage)
+
     def record_tool(self) -> None:
         self.tool_calls += 1
 

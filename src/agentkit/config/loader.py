@@ -87,6 +87,7 @@ def _anchor_paths(cfg: Config, root: Path) -> Config:
         return value if Path(value).is_absolute() else str(root / value)
 
     cfg.observability.jsonl_path = anchored(cfg.observability.jsonl_path)
+    cfg.memory.sqlite_path = anchored(cfg.memory.sqlite_path)
     for name in ("dataset_dir", "results_dir", "cassette_dir"):
         setattr(cfg.evals, name, anchored(getattr(cfg.evals, name)))
     for section, key in (("filesystem", "root"), ("sql_query", "database")):

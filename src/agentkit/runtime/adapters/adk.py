@@ -5,7 +5,8 @@ tools that call the kit's tool executor, and model roles become ADK model object
 `to_native` returns the `LlmAgent` for anyone who needs ADK directly.
 
 Gaps against the native adapter, by design of ADK or not built yet:
-- Input must be a string; a message history cannot be passed in.
+- Input must be a string; a message history cannot be passed in, so sessions and
+  `agentkit chat` need the native adapter. Long histories are not trimmed.
 - A run that needs an approval the channel has not decided cannot be resumed; it ends
   with `awaiting_approval` and no `pending` state.
 - `sub_agents` are not mapped. Use the native adapter for hand-offs.

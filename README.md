@@ -187,6 +187,28 @@ After changing a prompt, a tool or the model, run the suite again and compare:
 uv run agentkit eval compare <earlier run id> latest --project-dir my-agent
 ```
 
+## Have a conversation
+
+`run` answers one request. `chat` keeps the conversation, so each message sees the earlier ones:
+
+```
+uv run agentkit chat my_agent --project-dir my-agent
+```
+
+```
+Session 3f9a1c0b7d2e. Type /reset to forget the conversation, /exit to leave.
+you> What is 17 times 23?
+  [calculator {"expression": "17 * 23"}]
+17 times 23 is 391.
+you> Now add 9 to that.
+  [calculator {"expression": "391 + 9"}]
+Adding 9 to 391 results in 400.
+```
+
+The history is stored in the project (`.agentkit/memory.db`), so `--session <id>` continues a conversation later. Each message is its own run, with its own budget and trace.
+
+When a conversation nears the model's context window, the kit trims what it sends, not what it keeps. By default it blanks the oldest tool results first; set `memory.context.strategy: summarize` to have the `fast` model summarise older turns instead, or `off` to send everything. Local models with small windows reach this point early, so declare their real `context_window` in the models config.
+
 ## How a project is put together
 
 **Agents** are described, not programmed:
@@ -216,6 +238,7 @@ agent = AgentSpec(
 |---|---|
 | `agentkit new <name> [--pattern single\|router\|workflow]` | Create a project. |
 | `agentkit run <agent> "<input>" [--model <role>]` | Run an agent or workflow once. |
+| `agentkit chat <agent> [--session <id>]` | Talk to an agent across several messages. |
 | `agentkit trace <run id>` | Show the timeline of a run. |
 | `agentkit eval run [path] [--tags ...] [--repeat N] [--live] [--record\|--replay]` | Run eval suites. |
 | `agentkit eval report [run]`, `agentkit eval compare <baseline> <candidate>` | Read and compare results. |
@@ -239,7 +262,7 @@ To run an agent on Google ADK instead of the kit's own loop, install the `adk` e
 ## Limitations
 
 - The Anthropic, OpenAI and Gemini providers are covered by unit tests but have not been exercised against the live APIs. The local-model path has.
-- There is no conversation memory across runs yet: no session history, no trimming of long histories, and no `agentkit chat`.
+- Conversations and context trimming work on the kit's own runtime only, not on the ADK adapter.
 - Not built: MCP tool loading, a tool that executes code, an OTLP trace exporter, and the planner/executor, parallel and evaluator/reviser patterns.
 
 ## Development

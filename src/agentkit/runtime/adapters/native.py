@@ -14,6 +14,7 @@ from agentkit.errors import AgentKitError, UnsupportedCapability
 from agentkit.guardrails.approvals import ApprovalDecision, ApprovalPending
 from agentkit.guardrails.budget import Budget, BudgetExceeded
 from agentkit.guardrails.checks import run_checks
+from agentkit.memory.context import ContextManager
 from agentkit.models.base import Message, ModelRequest, ToolResultPart
 from agentkit.models.model import Model
 from agentkit.models.registry import get_model
@@ -126,6 +127,34 @@ class NativeAdapter:
             )
         schema = spec.output_schema.model_json_schema() if spec.output_schema else None
         messages: list[Message] = []
+        tool_specs = [tool.spec for tool in tools.values()]
+
+        async def summarize(transcript: str) -> str:
+            """Summarise older turns with the fast model, counted against this run's budget."""
+            fast = self._model_factory("fast", cfg, agent_name=spec.name)
+            prompt = (
+                Path(__file__).parents[2] / "memory" / "prompts" / "summary_v1.md"
+            ).read_text()
+            request = ModelRequest(
+                messages=[
+                    Message.from_text("system", prompt),
+                    Message.from_text("user", transcript),
+                ]
+            )
+            with ctx.tracer.span("model_call", fast.key, purpose="summarize_context") as span:
+                response = await fast.generate(request)
+                span.set(
+                    input_tokens=response.usage.input_tokens,
+                    output_tokens=response.usage.output_tokens,
+                    cost_usd=response.usage.cost_usd,
+                    stop_reason=response.stop_reason,
+                )
+            ctx.budget.record_usage(response.usage)
+            return response.message.text
+
+        context = ContextManager(
+            cfg.memory.context, model.capabilities.context_window, summarize=summarize
+        )
 
         def done(
             stop_reason: StopReason,
@@ -196,12 +225,10 @@ class NativeAdapter:
                     error = ErrorInfo(kind=exc.limit, message=str(exc))
                     yield done("budget_exceeded", last_text or None, error=error)
                     return
-                request = ModelRequest(
-                    messages=messages,
-                    tools=[tool.spec for tool in tools.values()],
-                    response_schema=schema,
-                )
                 try:
+                    # The transcript stays whole; a long one is sent as a trimmed view.
+                    sent = await context.view(messages, tool_specs)
+                    request = ModelRequest(messages=sent, tools=tool_specs, response_schema=schema)
                     with ctx.tracer.span("model_call", model.key) as span:
                         response = await model.generate(request)
                         span.set(
@@ -211,9 +238,10 @@ class NativeAdapter:
                             output_tokens=response.usage.output_tokens,
                             cached_input_tokens=response.usage.cached_input_tokens,
                             cost_usd=response.usage.cost_usd,
+                            context_trimmed=context.trimmed,
                         )
                         span.set_content(
-                            messages=[m.model_dump(mode="json") for m in messages],
+                            messages=[m.model_dump(mode="json") for m in sent],
                             response=response.message.model_dump(mode="json"),
                         )
                 except AgentKitError as exc:

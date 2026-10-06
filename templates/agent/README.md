@@ -6,6 +6,7 @@ An agent built on agentkit.
 agentkit doctor                              # check config and credentials
 agentkit eval run evals/                     # starter evals; pass with no API key
 agentkit run __AGENT_NAME__ "What is 17 times 23?"
+agentkit chat __AGENT_NAME__                    # a conversation that is kept
 agentkit trace <run id>                      # timeline of a run
 ```
 
