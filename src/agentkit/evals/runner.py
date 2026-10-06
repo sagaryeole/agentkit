@@ -34,7 +34,7 @@ from agentkit.models.base import (
 from agentkit.models.model import Link, Model
 from agentkit.models.providers.fake import FakeProvider
 from agentkit.models.registry import build_provider, get_model
-from agentkit.patterns.workflow import run_named
+from agentkit.patterns.base import run_named
 from agentkit.runtime.adapters import get_adapter
 from agentkit.runtime.context import RunContext
 from agentkit.runtime.project import Project

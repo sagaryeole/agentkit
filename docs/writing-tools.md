@@ -126,6 +126,35 @@ settings = OrdersSettings.model_validate(ctx.config.tools.settings.get("orders",
 
 Secrets come from environment variables, not from YAML.
 
+## Tools from MCP servers
+
+Tools offered by a [Model Context Protocol](https://modelcontextprotocol.io) server can be used like your own. Install the extra (`uv sync --extra mcp`) and declare the server in `agentkit.yaml`:
+
+```yaml
+tools:
+  mcp_servers:
+    docs:
+      command: ["python", "servers/docs.py"]     # a local server, over stdio
+      pass_env: [DOCS_API_KEY]                   # environment variables it may see
+      side_effects:
+        search: read_external                    # by the server's own tool names
+    tracker:
+      url: https://mcp.example.com/mcp           # or a remote server, over HTTP
+      headers_env: { Authorization: TRACKER_AUTH_HEADER }
+```
+
+Each tool is registered as `<server>_<tool>` in snake case, for example `docs_search`. Run `agentkit tools list` to see the names, then add the ones an agent needs to its `tools`.
+
+What applies to them:
+
+- **They are `write` unless you say otherwise.** A server's own hints about its tools are not trusted. Until a tool is listed under `side_effects`, every call needs approval.
+- **Their output is always treated as untrusted** and delimited for the model.
+- **Arguments are checked against the server's schema** before anything is sent, and approvals, timeouts, truncation, budgets and tracing work as for any tool.
+- **Their descriptions come from the server** and go into the model's prompt. Only connect servers you trust; a malicious description is a prompt injection.
+- **A local server sees a minimal environment** plus the variables named in `pass_env`.
+- **Each call opens its own connection.** A local server is started for the call and stopped after it, so servers that keep state between calls will not work as intended, and slow-starting servers make every call slow.
+- **In evals** they follow the usual rule: they need a fixture, or `--live`.
+
 ## What `ctx` gives you
 
 | Attribute | Use |

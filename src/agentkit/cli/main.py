@@ -24,7 +24,7 @@ from agentkit.models import Message, ModelRequest
 from agentkit.models.providers.local import list_local_models
 from agentkit.models.registry import get_model, local_api_base, resolve_chain
 from agentkit.observability.tracer import read_trace, render_trace
-from agentkit.patterns.workflow import run_named
+from agentkit.patterns.base import run_named
 from agentkit.runtime.adapters import get_adapter
 from agentkit.runtime.context import RunContext
 from agentkit.runtime.executor import execute_tool

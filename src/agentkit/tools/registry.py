@@ -1,24 +1,37 @@
 """The set of tools available to a project, and the subset given to one agent."""
 
 import warnings
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 
 from agentkit.config import Config
+from agentkit.config.schema import McpServer
 from agentkit.errors import AgentKitError
 from agentkit.tools.base import Tool
 
 
 class ToolRegistry:
-    def __init__(self, *, max_tools_per_agent: int = 20) -> None:
+    def __init__(
+        self,
+        *,
+        max_tools_per_agent: int = 20,
+        mcp_servers: Mapping[str, McpServer] | None = None,
+        debug: bool = False,
+    ) -> None:
         self._tools: dict[str, Tool] = {}
         self._max_tools_per_agent = max_tools_per_agent
+        self._mcp_servers = dict(mcp_servers or {})
+        self._debug = debug
 
     @classmethod
     def from_config(cls, cfg: Config) -> "ToolRegistry":
         """A registry holding the builtin tools named in `tools.enabled`."""
         from agentkit.tools.builtin import BUILTIN_TOOLS
 
-        registry = cls(max_tools_per_agent=cfg.tools.max_tools_per_agent)
+        registry = cls(
+            max_tools_per_agent=cfg.tools.max_tools_per_agent,
+            mcp_servers=cfg.tools.mcp_servers,
+            debug=cfg.observability.log_level == "DEBUG",
+        )
         for name in cfg.tools.enabled:
             if name not in BUILTIN_TOOLS:
                 raise AgentKitError(
@@ -27,7 +40,29 @@ class ToolRegistry:
                     "list, or register your own tool in code."
                 )
             registry.register(BUILTIN_TOOLS[name])
+        for server in cfg.tools.mcp_servers:
+            registry.load_mcp(server)
         return registry
+
+    def load_mcp(self, name: str, server: McpServer | None = None) -> list[Tool]:
+        """Register the tools of an MCP server: one declared under `tools.mcp_servers`, or
+        the `server` given. Each is named `<server>_<tool>`."""
+        server = server or self._mcp_servers.get(name)
+        if server is None:
+            raise AgentKitError(
+                f"No MCP server named '{name}' is configured. Declare it under "
+                f"tools.mcp_servers. Configured: {', '.join(self._mcp_servers) or 'none'}."
+            )
+        try:
+            from agentkit.tools.mcp import load_mcp_tools
+        except ImportError as exc:
+            raise AgentKitError(
+                "MCP servers need the MCP SDK. Install it with `uv add 'agentkit[mcp]'`."
+            ) from exc
+        tools = load_mcp_tools(name, server, self._debug)
+        for tool in tools:
+            self.register(tool)
+        return tools
 
     def register(self, tool: Tool) -> None:
         if tool.name in self._tools:

@@ -6,6 +6,7 @@ import time
 from collections.abc import Mapping
 from typing import Any
 
+import jsonschema
 from pydantic import BaseModel, ValidationError
 from pydantic_core import PydanticSerializationError, to_jsonable_python
 
@@ -29,6 +30,14 @@ def wrap_untrusted(source: str, text: str) -> str:
 
 
 def _validate(tool: Tool, arguments: Mapping[str, Any]) -> BaseModel | ToolError:
+    if tool.json_schema is not None:
+        try:
+            jsonschema.validate(dict(arguments), tool.json_schema)
+        except jsonschema.ValidationError as exc:
+            return ToolError(
+                kind="invalid_input",
+                message=f"{exc.message}. Correct the arguments and call {tool.name} again.",
+            )
     try:
         return tool.input_model.model_validate(dict(arguments))
     except ValidationError as exc:

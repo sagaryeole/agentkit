@@ -100,6 +100,24 @@ class ToolApproval(_Section):
     overrides: dict[str, ApprovalPolicy] = {}  # by tool name
 
 
+class McpServer(_Section):
+    """A Model Context Protocol server whose tools join the registry."""
+
+    command: list[str] | None = None  # start a local server and talk to it over stdio
+    url: str | None = None  # or connect to a server over streamable HTTP
+    pass_env: list[str] = []  # environment variables a local server may see
+    headers_env: dict[str, str] = {}  # HTTP header name -> variable holding its value
+    # Side effects per tool, by the server's tool name. A tool not listed is `write`.
+    side_effects: dict[str, SideEffects] = {}
+    timeout_seconds: float | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def _one_transport(self) -> Self:
+        if bool(self.command) == bool(self.url):
+            raise ValueError("give exactly one of `command` or `url`")
+        return self
+
+
 class Tools(_Section):
     enabled: list[str]
     max_tools_per_agent: int = Field(ge=1)  # more than this triggers a warning
@@ -107,6 +125,7 @@ class Tools(_Section):
     approval: ToolApproval
     # Per-tool settings, validated by the tool that reads them.
     settings: dict[str, dict[str, Any]] = {}
+    mcp_servers: dict[str, McpServer] = {}
 
 
 class Guardrails(_Section):

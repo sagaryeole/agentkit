@@ -1,0 +1,35 @@
+# Scripted replies, in order: the planner's plan, then the doer's turns for each step.
+
+suite: planner
+agent: solve
+
+cases:
+  - id: plan_is_carried_out_in_order
+    input: "A shop sells 17 boxes of 23 pens. 40 pens are returned. How many pens are sold?"
+    setup:
+      fake_model:
+        - text: '{"steps": ["Multiply 17 by 23", "Subtract 40 from the result", "State the final answer in one sentence."]}'
+        - tool_call: { name: calculator, arguments: { expression: "17 * 23" } }
+        - text: "391"
+        - tool_call: { name: calculator, arguments: { expression: "391 - 40" } }
+        - text: "351"
+        - text: "351 pens are sold."
+    expect:
+      output:
+        exact: "351 pens are sold."
+    graders:
+      - no_error
+      - type: trajectory
+        tool_sequence: [calculator, calculator]
+        max_steps: 6
+    tags: [smoke]
+
+  - id: an_overlong_plan_is_refused
+    input: "Count to ten, one step at a time."
+    setup:
+      fake_model:
+        - text: '{"steps": ["1", "2", "3", "4", "5", "6"]}'
+    graders:
+      - type: custom
+        function: "graders:refused_as_too_long"
+    tags: [smoke]

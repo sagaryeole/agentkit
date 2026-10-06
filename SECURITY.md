@@ -17,7 +17,9 @@ What the kit does:
 - Tools that return outside content are declared `untrusted_output`. Their results reach the model inside a delimited block with a note that the content is data. The closing delimiter is escaped so content cannot end the block early.
 - Nothing in tool output can change which tools the agent has, the approval policy or the limits. Those come only from configuration and code.
 
-What remains: delimiting lowers the success rate of injection; it does not prevent it. The defences below are what bound the damage.
+- Tools from MCP servers are always `untrusted_output`, and are treated as `write` until configuration declares otherwise; a server's own claims about its tools are ignored.
+
+What remains: delimiting lowers the success rate of injection; it does not prevent it. The defences below are what bound the damage. The descriptions of MCP tools come from the server and enter the prompt as they are, so an MCP server must be trusted like code.
 
 ### 2. Excessive agency
 
@@ -33,6 +35,7 @@ What the kit does:
 - `sql_query` accepts a single `SELECT`, opens the database read-only and limits rows and time.
 - `calculator` evaluates a restricted arithmetic syntax and never calls `eval`.
 - There is no tool that executes model-written code.
+- A local MCP server is started with a minimal environment plus only the variables it is granted.
 
 What remains: an approver who approves without reading, and any project tool that is declared `none` but has side effects.
 

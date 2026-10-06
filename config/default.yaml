@@ -43,6 +43,13 @@ tools:
     sql_query:
       database: null            # path of a SQLite file; it is opened read-only
 
+  # Tools from Model Context Protocol servers (needs the `mcp` extra). Each tool is
+  # registered as <server>_<tool> and is treated as `write` unless declared here:
+  # mcp_servers:
+  #   docs:
+  #     command: ["python", "servers/docs.py"]   # or url: https://mcp.example.com/mcp
+  #     side_effects: { search: read_external }
+
 guardrails:
   approval_channel: cli         # cli | callback | auto_deny | auto_approve (tests only)
   redact_patterns: [email, api_key]   # applied to traces before they are written

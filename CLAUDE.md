@@ -34,7 +34,7 @@ MODEL_PROVIDER=local LOCAL_MODEL_ID=<id> uv run pytest tests/integration -m loca
 uv run pytest tests/integration -m integration        # needs ANTHROPIC_API_KEY
 ```
 
-CI (`.github/workflows/ci.yml`) runs ruff, mypy, pytest, the smoke evals of every example project (and of `single_agent` again on the ADK adapter), and a `pip-audit` scan of the locked dependencies.
+CI (`.github/workflows/ci.yml`) runs ruff, mypy, pytest, the smoke evals of all eight example projects (and of `single_agent` again on the ADK adapter), and a `pip-audit` scan of the locked dependencies.
 
 ## Build status
 
@@ -45,9 +45,10 @@ Milestones are built strictly in order; a milestone does not start until the pre
   - The ADK adapter has been run live only against a local model through LiteLLM. Its Gemini and Anthropic mappings are checked by a unit test, not by a call.
   - `web_search` (SearXNG) has only been tested against a mocked server.
   - `exporter: otlp` is rejected; only `jsonl`, `console` and `none` ship.
-  - Of the eight patterns in spec section 15, single agent, fixed workflow, router, hand-off and human in the loop exist. Planner/executor, parallel fan-out and evaluator/reviser are not built (M8's acceptance criteria name only router, workflow and human in the loop).
+  - All eight patterns of spec section 15 exist. Planner/executor, fan-out and the revise loop have run live only on a local model.
+  - MCP loading has been tested against a local stdio server; the HTTP transport has not been run.
   - `SECURITY.md` has no contact address for reports yet.
-  - Dropped or deferred by the owner: `run_python` (dropped for now), MCP tool loading, LangGraph and Claude Agent SDK adapters.
+  - Dropped or deferred by the owner: `run_python` (dropped for now), LangGraph and Claude Agent SDK adapters.
   - Sessions, context trimming and `agentkit chat` exist for the native adapter only. The ADK adapter takes a string and keeps no history.
 - Documentation lives in `README.md`, `docs/patterns.md`, `docs/writing-tools.md`, `docs/writing-evals.md` and `SECURITY.md`. They describe behaviour precisely (defaults, exit codes, which tools run in evals), so a change to that behaviour needs the matching doc changed. The README's walk-through was verified by following it; re-run it after changing the CLI or the template.
 
@@ -102,6 +103,7 @@ Every tool call, from any adapter, an eval or `agentkit tools call`, goes throug
 - Approval channels (`guardrails/approvals.py`): `cli`, `callback`, `auto_deny` (the `RunContext` default, so nothing side-effecting runs unattended), `auto_approve` (refused in prod). A denial comes back to the model as a `permission` error and the run continues. A channel that returns `None` suspends the run.
 - A new builtin goes in `tools/builtin/`, is added to `BUILTIN_TOOLS`, and reads its own section of `tools.settings` through a small Pydantic model. File tools must take every path through `resolve_in_root`.
 - `http_fetch` fetches nothing until `allowed_domains` is set. It resolves the host itself, refuses unless every address is public, then connects to that checked address, and checks every redirect hop the same way.
+- MCP (`tools/mcp.py`, extra `agentkit[mcp]`, imported only when a server is configured): `ToolRegistry.from_config` loads every server under `tools.mcp_servers`, registering each remote tool as `<server>_<tool>`. Such a `Tool` carries the server's JSON Schema in `json_schema` (validated with `jsonschema` in the executor) instead of a typed `input_model`. Side effects come only from config and default to `write`; output is always untrusted. Every call opens and closes its own connection, which keeps it independent of the event loop (the CLI starts a new loop per chat turn) at the cost of restarting stdio servers. Listing runs in a helper thread so it works from sync and async callers. The SDK is on 2.x, whose names differ from 1.x (`MCPServer`, `input_schema`, `streamable_http_client`).
 - `agentkit.tools.builtin.http_fetch` as an attribute is the tool, not the module; tests that patch module functions get the module from `sys.modules`.
 
 ### Runtime
@@ -128,7 +130,22 @@ Every tool call, from any adapter, an eval or `agentkit tools call`, goes throug
 
 ### Patterns
 
-`patterns/` holds the shapes that are more than one `AgentSpec`. `router(name, description, routes)` returns an `AgentSpec` on the `fast` role whose only job is to `handoff`. `Workflow` is a list of agent names run in order under one run span and one budget, each step's output being the next step's input; it stops at the first step that does not complete. A project defines workflows next to its agents, and `run_named(project, adapter, name, input, ctx)` runs whichever of the two `name` is; `agentkit run` and the eval runner both go through it. Human in the loop needs no code: it is the approval gate plus the `ask_human` tool (`examples/human_in_loop`).
+`patterns/` holds the shapes that are more than one `AgentSpec`. `router(...)` returns an `AgentSpec` on the `fast` role whose only job is to `handoff`. The others subclass `Pattern` (`patterns/base.py`), a Pydantic model with a `name`, a `description` and an async `run(input, adapter, project, ctx)`:
+
+| Class | Shape |
+|---|---|
+| `Workflow` | Agents in a fixed order, each output feeding the next. |
+| `PlanAndExecute` | A planner returns a `Plan`; an executor runs each step with the task and earlier results. |
+| `FanOut` | Workers run concurrently on the same input; a merger gets all results. |
+| `ReviseLoop` | A writer drafts, an evaluator returns a `Verdict`, bounded by `max_rounds`. |
+
+- A project defines patterns next to its agents; `load_project` recognises them by the `agentkit_pattern` class attribute (it cannot import `patterns`, which imports it). `run_named(project, adapter, name, input, ctx)` runs a pattern or an agent, and is what `agentkit run` and the eval runner call.
+- `run_named` owns what is common: the pattern's `run` span, collecting every agent's transcript, and restating usage and steps for the whole pattern. A pattern's `run` only decides which agent runs when, on what input, and returns the `RunResult` that should stand for the run. A step that does not complete ends the pattern with that step's result.
+- All agents in a pattern share `ctx`, so one budget bounds the pattern. `RunResult.steps` of a nested run is therefore the running total, not that agent's own count.
+- Where a pattern needs structured output from an agent (`Plan`, `Verdict`) it copies the spec with `output_schema` set, so project authors do not.
+- `FanOut` gives each worker `dataclasses.replace(ctx, tracer=ctx.tracer.child())`: a tracer that writes to the same trace but tracks its own span nesting. Anything else that runs agents concurrently must do the same, or spans get the wrong parents.
+- With a scripted eval model, concurrent workers that call no tools consume replies in the order they are listed.
+- Human in the loop needs no code: it is the approval gate plus the `ask_human` tool.
 
 ### ADK adapter
 

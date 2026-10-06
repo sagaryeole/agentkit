@@ -1,0 +1,55 @@
+# Scripted replies alternate: the writer's draft, then the reviewer's verdict.
+
+suite: revise_loop
+agent: polish
+defaults:
+  graders: [no_error]
+
+cases:
+  - id: approved_first_time
+    input: "Announce that the office is closed on Monday."
+    setup:
+      fake_model:
+        - text: "The office is closed on Monday."
+        - text: '{"approved": true}'
+    expect:
+      output:
+        exact: "The office is closed on Monday."
+    graders:
+      - type: within_budget
+        max_steps: 2
+    tags: [smoke]
+
+  - id: revised_after_feedback
+    input: "Announce that the office is closed on Monday."
+    setup:
+      fake_model:
+        - text: "Office closed!"
+        - text: '{"approved": false, "feedback": "It has an exclamation mark and no day; state the day and end with a full stop."}'
+        - text: "The office is closed on Monday."
+        - text: '{"approved": true}'
+    expect:
+      output:
+        contains: ["Monday"]
+    graders:
+      - type: within_budget
+        max_steps: 4
+    tags: [smoke]
+
+  - id: stops_after_the_last_round
+    input: "Announce that the office is closed on Monday."
+    setup:
+      fake_model:
+        - text: "Closed!"
+        - text: '{"approved": false, "feedback": "State the day."}'
+        - text: "Closed Monday!"
+        - text: '{"approved": false, "feedback": "Remove the exclamation mark."}'
+        - text: "Closed on Monday."
+        - text: '{"approved": false, "feedback": "Say what is closed."}'
+    expect:
+      output:
+        exact: "Closed on Monday."
+    graders:
+      - type: within_budget
+        max_steps: 6
+    tags: [smoke]

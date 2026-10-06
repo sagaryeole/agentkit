@@ -1,0 +1,24 @@
+# Scripted replies. Workers that call no tools take their replies in the order they are
+# listed in the pattern: benefits, risks, then the advisor.
+
+suite: fan_out
+agent: decide
+
+cases:
+  - id: both_sides_reach_the_advisor
+    input: "Should we move the launch from Friday to Monday?"
+    setup:
+      fake_model:
+        - text: "More time to test."
+        - text: "The press slot is on Friday."
+        - text: "No: the press slot on Friday cannot be moved."
+    expect:
+      output:
+        regex: "^No"
+    graders:
+      - no_error
+      - type: within_budget
+        max_steps: 3
+      - type: custom
+        function: "graders:advisor_saw_both_sides"
+    tags: [smoke]

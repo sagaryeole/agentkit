@@ -23,12 +23,12 @@ class Project:
     config: Config
     registry: ToolRegistry
     agents: dict[str, AgentSpec] = field(default_factory=dict)
-    workflows: dict[str, BaseModel] = field(default_factory=dict)  # patterns.workflow.Workflow
+    patterns: dict[str, BaseModel] = field(default_factory=dict)  # agentkit.patterns.Pattern
     schemas: dict[str, type[BaseModel]] = field(default_factory=dict)
 
     def require(self, name: str) -> None:
         """Raise unless `name` is something this project can run."""
-        if name not in self.workflows:
+        if name not in self.patterns:
             self.agent(name)
 
     def agent(self, name: str) -> AgentSpec:
@@ -80,8 +80,8 @@ def load_project(root: Path, cfg: Config) -> Project:
                     registered.add(id(value))
                 elif isinstance(value, AgentSpec):
                     project.agents[value.name] = value
-                elif type(value).__name__ == "Workflow" and isinstance(value, BaseModel):
-                    project.workflows[str(getattr(value, "name", ""))] = value
+                elif getattr(type(value), "agentkit_pattern", False):
+                    project.patterns[str(getattr(value, "name", ""))] = value
                 elif (
                     isinstance(value, type)
                     and issubclass(value, BaseModel)

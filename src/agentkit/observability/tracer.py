@@ -5,6 +5,8 @@ OpenTelemetry SDK gets them in any OTLP backend, and to the kit's own exporter,
 which by default writes one JSON-lines file per run and needs no service.
 """
 
+import copy
+import itertools
 import json
 import sys
 import time
@@ -73,7 +75,15 @@ class Tracer:
         self._patterns = cfg.guardrails.redact_patterns
         self._secrets = known_secret_values() if secrets is None else list(secrets)
         self._stack: list[tuple[str, otel.Span]] = []
-        self._started = 0
+        self._sequence = itertools.count(1)
+
+    def child(self) -> "Tracer":
+        """A tracer for work that runs at the same time as other work in this run. It
+        writes to the same trace under the currently open span, but tracks its own
+        nesting, so parallel branches do not confuse each other's parents."""
+        branch = copy.copy(self)
+        branch._stack = list(self._stack)
+        return branch
 
     @property
     def depth(self) -> int:
@@ -96,8 +106,7 @@ class Tracer:
     def span(self, kind: SpanKind, name: str, **attributes: Any) -> Iterator[Span]:
         span = Span(uuid.uuid4().hex[:16])
         span.set(**attributes)
-        self._started += 1
-        sequence = self._started  # spans are written when they end; this keeps start order
+        sequence = next(self._sequence)  # spans are written when they end; this keeps order
         parent_id, parent_otel = self._stack[-1] if self._stack else (None, None)
         context = otel.set_span_in_context(parent_otel) if parent_otel else None
         otel_span = _OTEL.start_span(f"{kind} {name}", context=context)

@@ -1,0 +1,6 @@
+# Evaluator and reviser loop: a draft is reviewed and rewritten, a bounded number of times.
+#   agentkit run polish "Announce that the office is closed on Monday."
+#   agentkit eval run evals/
+
+tools:
+  enabled: []

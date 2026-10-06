@@ -1,0 +1,6 @@
+# Planner and executor: one agent writes a plan, another carries it out step by step.
+#   agentkit run solve "A shop sells 17 boxes of 23 pens. 40 pens are returned. How many are sold?"
+#   agentkit eval run evals/
+
+tools:
+  enabled: [calculator]

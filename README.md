@@ -230,7 +230,7 @@ agent = AgentSpec(
 
 **Approvals.** A tool that changes something waits for the operator at the terminal. See [docs/patterns.md](docs/patterns.md#human-in-the-loop).
 
-**Builtin tools** are enabled by name under `tools.enabled`: `calculator`, `current_time`, `read_file`, `list_files`, `search_files`, `write_file`, `http_fetch`, `web_search`, `sql_query`, `ask_human`, `remember`, `recall`, `finish`. `uv run agentkit tools list` shows the enabled ones.
+**Builtin tools** are enabled by name under `tools.enabled`: `calculator`, `current_time`, `read_file`, `list_files`, `search_files`, `write_file`, `http_fetch`, `web_search`, `sql_query`, `ask_human`, `remember`, `recall`, `finish`. `uv run agentkit tools list` shows the enabled ones. Tools from MCP servers can be added in configuration; see [docs/writing-tools.md](docs/writing-tools.md#tools-from-mcp-servers).
 
 ## Commands
 
@@ -255,7 +255,7 @@ Every command takes `--project-dir <dir>` and `--env <name>`.
 - [docs/writing-tools.md](docs/writing-tools.md): the tool contract, failures, and why tool output is untrusted.
 - [docs/writing-evals.md](docs/writing-evals.md): the dataset format, graders, fixtures, record and replay.
 - [SECURITY.md](SECURITY.md): the threat model.
-- `examples/`: complete projects with eval suites: `single_agent`, `builtin_tools`, `router`, `workflow`, `human_in_loop`.
+- `examples/`: complete projects with eval suites: `single_agent`, `builtin_tools`, `router`, `workflow`, `human_in_loop`, `planner`, `fan_out`, `revise_loop`.
 
 To run an agent on Google ADK instead of the kit's own loop, install the `adk` extra (`uv sync --extra adk`) and set `runtime.adapter: adk`.
 
@@ -263,7 +263,8 @@ To run an agent on Google ADK instead of the kit's own loop, install the `adk` e
 
 - The Anthropic, OpenAI and Gemini providers are covered by unit tests but have not been exercised against the live APIs. The local-model path has.
 - Conversations and context trimming work on the kit's own runtime only, not on the ADK adapter.
-- Not built: MCP tool loading, a tool that executes code, an OTLP trace exporter, and the planner/executor, parallel and evaluator/reviser patterns.
+- Not built: a tool that executes code, and an OTLP trace exporter.
+- Tools from MCP servers open a new connection per call, so servers that keep state between calls are not supported well.
 
 ## Development
 

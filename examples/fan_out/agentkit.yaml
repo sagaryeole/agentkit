@@ -1,0 +1,6 @@
+# Parallel fan-out and merge: several agents look at the same question at once.
+#   agentkit run decide "Should we move the launch from Friday to Monday?"
+#   agentkit eval run evals/
+
+tools:
+  enabled: []

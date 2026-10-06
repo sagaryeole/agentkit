@@ -62,16 +62,21 @@ class Tool:
     tags: tuple[str, ...]
     untrusted_output: bool
     wants_ctx: bool
+    # Set for tools whose schema comes from outside (MCP): used instead of `input_model`.
+    json_schema: dict[str, Any] | None = None
 
     @property
     def spec(self) -> ToolSpec:
-        schema = self.input_model.model_json_schema()
+        schema = dict(self.json_schema or self.input_model.model_json_schema())
         schema.pop("title", None)
         return ToolSpec(name=self.name, description=self.description, input_schema=schema)
 
     async def call(self, args: BaseModel, ctx: "RunContext") -> Any:
         """Run the function with validated arguments. Sync functions run in a thread."""
-        kwargs = {name: getattr(args, name) for name in type(args).model_fields}
+        if self.json_schema is not None:
+            kwargs = args.model_dump()
+        else:
+            kwargs = {name: getattr(args, name) for name in type(args).model_fields}
         if self.wants_ctx:
             kwargs["ctx"] = ctx
         if inspect.iscoroutinefunction(self.fn):

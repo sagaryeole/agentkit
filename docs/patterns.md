@@ -15,11 +15,13 @@
 | Router | Inputs fall into categories handled differently | `router(...)` |
 | Hand-off between agents | One agent's context is overloaded, or the skills are clearly separate | `AgentSpec.sub_agents` |
 | Human in the loop | A step has side effects or low confidence | Approval gate, `ask_human` |
-| Planner and executor | The task needs a plan that is then carried out | Not built yet |
-| Parallel fan-out and merge | Independent subtasks can run at the same time | Not built yet |
-| Evaluator and reviser loop | A critique pass improves quality | Not built yet |
+| Planner and executor | The task needs a plan that is then carried out | `PlanAndExecute` |
+| Parallel fan-out and merge | Independent subtasks can run at the same time | `FanOut` |
+| Evaluator and reviser loop | A critique pass improves quality | `ReviseLoop` |
 
-Each pattern that exists has a runnable project under `examples/` with an eval suite.
+Each pattern has a runnable project under `examples/` with an eval suite.
+
+The multi-agent patterns (workflow, planner and executor, fan-out, reviser loop) are defined next to the agents in `agents/` and run by name, like an agent: `agentkit run <name> "..."`. Within one of them every agent is a nested run in the same trace and draws on one shared budget, so the limits in the config bound the whole pattern.
 
 ## Single agent with tools
 
@@ -99,7 +101,7 @@ Control moves to the other agent and does not come back: its result ends the run
 
 Use it when a second stage needs a different prompt, tools or model, and the first stage can summarise what it learned. If the first agent needs the answer back to continue, hand-off is the wrong tool; make the second capability a tool instead.
 
-Hand-offs run on the native adapter only.
+Hand-offs run on the native adapter only. The other multi-agent patterns work on both adapters.
 
 ## Human in the loop
 
@@ -122,6 +124,67 @@ Example: `examples/human_in_loop`.
 
 Tell the agent to state what it is about to do before a side-effecting call; that sentence is what the approver reads. Do not put approval on steps nobody will actually review, since people learn to approve without reading.
 
-## Not built yet
+## Planner and executor
 
-Planner and executor, parallel fan-out and merge, and the evaluator and reviser loop are described in the specification but not implemented. A fixed workflow covers the simple case of the first: one step that plans and one that carries the plan out.
+One agent turns the task into an ordered list of steps. Another carries out each step in its own run, seeing the task and the results so far.
+
+```python
+from agentkit.patterns import PlanAndExecute
+
+solve = PlanAndExecute(
+    name="solve",
+    description="Plans a multi-step calculation, then works through it.",
+    planner="planner",
+    executor="doer",
+    max_plan_steps=5,                    # a longer plan stops the run
+)
+```
+
+The planner is made to return a list of steps as structured output; you do not set an output schema on it. The output of the last step is the answer of the run, so tell the planner to end with the step that writes the answer. A plan longer than `max_plan_steps` ends the run with an error before anything is executed.
+
+Example: `examples/planner`.
+
+Use it when a task needs several steps and you cannot list them before seeing the task. The planner can use the `reasoning` role and the executor a cheaper one. Do not use it when the steps are always the same (use a workflow), or when later steps depend on surprises in earlier ones: the plan is fixed once written, and a single agent adapts better.
+
+## Parallel fan-out and merge
+
+Several agents get the same input and run at the same time. One more agent receives the task and every result, and writes the answer.
+
+```python
+from agentkit.patterns import FanOut
+
+decide = FanOut(
+    name="decide",
+    description="Collects the case for and against a proposal, then recommends.",
+    workers=["benefits", "risks"],
+    merger="advisor",
+)
+```
+
+If any worker does not complete, the run stops with that worker's result and the merger is not called.
+
+Example: `examples/fan_out`.
+
+Use it when the parts do not depend on each other: several angles on one question, or several sources to check. It is faster than doing them in turn and costs the same. Do not use it when one worker needs another's result. Workers that need approval would prompt the operator at the same time, so keep side-effecting tools out of them.
+
+## Evaluator and reviser loop
+
+A writer drafts. An evaluator approves the draft or says what to change, and the writer revises, a bounded number of times.
+
+```python
+from agentkit.patterns import ReviseLoop
+
+polish = ReviseLoop(
+    name="polish",
+    description="Writes an announcement and revises it until it meets the house rules.",
+    writer="writer",
+    evaluator="reviewer",
+    max_rounds=3,                        # reviews, so at most two revisions
+)
+```
+
+The evaluator is made to return a verdict (`approved`, `feedback`) as structured output. The loop ends when the evaluator approves or after `max_rounds` reviews; the latest draft is the answer either way.
+
+Example: `examples/revise_loop`.
+
+Use it when the evaluator checks something concrete that the writer often misses, such as a house style or a set of required facts. Give the evaluator explicit rules; "make it better" produces endless feedback. Each round is two more runs, so measure with evals that the extra rounds improve the result before paying for them.
