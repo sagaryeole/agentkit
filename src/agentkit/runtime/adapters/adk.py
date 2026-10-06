@@ -332,6 +332,7 @@ class AdkAdapter:
             )
         started = time.monotonic()
         ctx.tracer.agent_name = spec.name
+        ctx.logger.debug("run started (agent %s, model %s)", spec.name, spec.model)
         key = resolve_chain(self.config, spec.model, agent_name=spec.name)[0]
         state = _RunState(ctx=ctx, model_key=key)
         if spec.limits is not None:
@@ -429,6 +430,7 @@ class AdkAdapter:
             span.set_content(input=input, output=outcome.output)
             if outcome.error is not None:
                 span.fail(f"{outcome.error.kind}: {outcome.error.message}")
+            ctx.log_result(outcome)
             yield final
 
     @staticmethod

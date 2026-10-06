@@ -1,6 +1,5 @@
 """Input and output checks: small hooks run on user input, tool output and the final answer."""
 
-import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
@@ -8,18 +7,11 @@ from typing import TYPE_CHECKING, Protocol
 from pydantic import BaseModel, ValidationError
 
 from agentkit.errors import ConfigError
+from agentkit.guardrails.patterns import PATTERNS
 
 if TYPE_CHECKING:
+    from agentkit.config import Config
     from agentkit.runtime.context import RunContext
-
-PATTERNS = {
-    "email": re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"),
-    "api_key": re.compile(
-        r"\b(?:sk|pk|rk|ghp|gho|ghs|xox[abps])[-_][A-Za-z0-9_\-]{16,}"
-        r"|\bAKIA[0-9A-Z]{16}\b"
-        r"|\bBearer\s+[A-Za-z0-9._\-]{20,}"
-    ),
-}
 
 
 class CheckResult(BaseModel):
@@ -41,6 +33,24 @@ class Checks:
     user_input: list[Check] = field(default_factory=list)
     tool_output: list[Check] = field(default_factory=list)
     final_answer: list[Check] = field(default_factory=list)
+
+    @classmethod
+    def from_config(cls, cfg: "Config") -> "Checks":
+        """The checks `guardrails` asks for: the redactor, at each point named in `redact_at`.
+
+        It removes the patterns in `redact_patterns` and the values of secret-looking
+        environment variables. Whoever passes their own `Checks` to a run replaces these.
+        """
+        from agentkit.config.secrets import known_secret_values
+
+        guard = cfg.guardrails
+        checks = cls()
+        if not guard.redact_at:
+            return checks
+        redactor = Redactor(guard.redact_patterns, known_secret_values())
+        for point in guard.redact_at:
+            getattr(checks, point).append(redactor)
+        return checks
 
 
 async def run_checks(checks: Sequence[Check], text: str, ctx: "RunContext") -> CheckResult:

@@ -20,9 +20,10 @@ from agentkit.evals.report import all_attempts, compare, pass_rate, render_compa
 from agentkit.evals.runner import load_run, run_suites, save_run
 from agentkit.guardrails.approvals import make_channel
 from agentkit.memory import make_stores
-from agentkit.models import Message, ModelRequest
+from agentkit.models import Message, ModelProvider, ModelRequest
 from agentkit.models.providers.local import list_local_models
-from agentkit.models.registry import get_model, local_api_base, resolve_chain
+from agentkit.models.registry import build_provider, get_model, local_api_base, resolve_chain
+from agentkit.observability.logs import configure_logging
 from agentkit.observability.tracer import read_trace, render_trace
 from agentkit.patterns.base import run_named
 from agentkit.runtime.adapters import get_adapter
@@ -50,6 +51,8 @@ ProjectDirOption = Annotated[
     Path, typer.Option("--project-dir", help="Directory containing agentkit.yaml.")
 ]
 
+PING_TIMEOUT_SECONDS = 15.0  # how long `doctor` waits for a provider to answer
+
 # Environment variables that can hold credentials for each hosted provider.
 PROVIDER_KEY_VARS = {
     "anthropic": ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"),
@@ -60,7 +63,9 @@ PROVIDER_KEY_VARS = {
 
 def _load_or_exit(project_dir: Path, env: str | None) -> Config:
     try:
-        return load_config(project_dir, env=env)
+        cfg = load_config(project_dir, env=env)
+        configure_logging(cfg)
+        return cfg
     except ConfigError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(1) from exc
@@ -461,14 +466,36 @@ def eval_compare(
         raise typer.Exit(1)
 
 
+def _credential_vars(cfg: Config, key: str) -> tuple[str, ...] | None:
+    """Environment variables that can hold the credentials of a model, or None if it needs none."""
+    entry = cfg.models.models[key]
+    if entry.api_key_env:
+        return (entry.api_key_env,)
+    return PROVIDER_KEY_VARS.get(entry.provider)
+
+
+async def _ping(provider: ModelProvider, timeout: float) -> str:
+    ping = getattr(provider, "ping", None)
+    if ping is None:
+        return "no connectivity check for this provider"
+    return str(await asyncio.wait_for(ping(), timeout))
+
+
 @app.command()
-def doctor(env: EnvOption = None, project_dir: ProjectDirOption = Path(".")) -> None:
-    """Check configuration, provider credentials and the local model server."""
+def doctor(
+    offline: Annotated[
+        bool, typer.Option("--offline", help="Do not contact any model provider.")
+    ] = False,
+    env: EnvOption = None,
+    project_dir: ProjectDirOption = Path("."),
+) -> None:
+    """Check configuration, credentials, and that each model in use can be reached."""
     try:
         cfg = load_config(project_dir, env=env)
     except ConfigError as exc:
         typer.echo(f"[fail] config: {exc}")
         raise typer.Exit(1) from exc
+    configure_logging(cfg)
     typer.echo(f"[ ok ] config: valid (env: {cfg.env})")
 
     if (project_dir / PROJECT_FILE).is_file():
@@ -476,30 +503,40 @@ def doctor(env: EnvOption = None, project_dir: ProjectDirOption = Path(".")) -> 
     else:
         typer.echo(f"[warn] project: no {PROJECT_FILE} in {project_dir}; using shipped defaults")
 
-    providers = {
-        cfg.models.models[resolve_chain(cfg, role)[0]].provider for role in cfg.models.roles
-    }
+    keys = list(dict.fromkeys(key for role in cfg.models.roles for key in resolve_chain(cfg, role)))
     failed = False
+    warned: set[str] = set()
     secrets = EnvSecretProvider()
-    for provider in sorted(providers):
-        if provider == "local":
-            try:
-                offered = _local_models(cfg)
-                typer.echo(f"[ ok ] local: server answers and offers {len(offered)} model(s)")
-            except AgentKitError as exc:
-                typer.echo(f"[fail] local: {exc}")
-                failed = True
-            continue
-        key_vars = PROVIDER_KEY_VARS.get(provider)
-        if key_vars is None:
-            typer.echo(f"[ ok ] keys: provider '{provider}' needs no API key")
-        elif any(secrets.get(var) for var in key_vars):
-            typer.echo(f"[ ok ] keys: credentials for '{provider}' are set")
-        else:
-            typer.echo(
-                f"[warn] keys: none of {', '.join(key_vars)} is set; '{provider}' models will "
-                "fail unless the SDK finds a login profile"
+    for key in keys:
+        provider_name = cfg.models.models[key].provider
+        key_vars = _credential_vars(cfg, key)
+        if key_vars and not any(secrets.get(var) for var in key_vars):
+            message = (
+                f"[warn] keys: none of {', '.join(key_vars)} is set; '{provider_name}' models "
+                "will fail unless the SDK finds a login profile"
             )
+            if message not in warned:
+                typer.echo(message)
+                warned.add(message)
+            typer.echo(f"[skip] {key}: not contacted, no credentials to try")
+            continue
+        if key_vars:
+            typer.echo(f"[ ok ] keys: credentials for '{key}' are set")
+        if offline:
+            typer.echo(f"[skip] {key}: not contacted (--offline)")
+            continue
+        try:
+            detail = asyncio.run(_ping(build_provider(cfg, key), PING_TIMEOUT_SECONDS))
+            typer.echo(f"[ ok ] {key}: {detail}")
+        except TimeoutError:
+            typer.echo(
+                f"[fail] {key}: no answer within {PING_TIMEOUT_SECONDS:g}s. "
+                "Check the network and the endpoint."
+            )
+            failed = True
+        except AgentKitError as exc:
+            typer.echo(f"[fail] {key}: {exc}")
+            failed = True
     typer.echo("[info] to check a model end to end, run `agentkit models test <role>`")
     if failed:
         raise typer.Exit(1)

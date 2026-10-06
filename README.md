@@ -20,7 +20,7 @@ uv sync
 uv run agentkit doctor
 ```
 
-`doctor` checks the configuration and tells you which credentials are missing. Nothing below needs any until the section on real models.
+`doctor` checks the configuration, tells you which credentials are missing, and for every model in use that has credentials, contacts the provider to check that it answers, accepts the key and knows the model ID. These checks are free (nothing is generated). `--offline` skips them. Nothing below needs any credentials until the section on real models.
 
 The commands in this guide are run from the checkout with `uv run agentkit ...`. To have `agentkit` on your PATH everywhere instead, install it as a tool: `uv tool install --editable '.[anthropic]'`.
 
@@ -187,6 +187,23 @@ After changing a prompt, a tool or the model, run the suite again and compare:
 uv run agentkit eval compare <earlier run id> latest --project-dir my-agent
 ```
 
+## Logs and redaction
+
+Problems are logged to stderr as JSON lines, one per event, each with the `run_id` of the run that caused it:
+
+```
+{"time": "2026-10-06T19:12:04.512+00:00", "level": "WARNING", "logger": "agentkit.run", "run_id": "2b7fc739...", "message": "tool read_file failed (not_found): 'todo.txt' is not a file. Use list_files to see what exists."}
+```
+
+Use the run ID with `agentkit trace` to see the whole run. A run that completes logs nothing at the default level; set `observability.log_level: DEBUG` to see every run start and end.
+
+Secrets never reach a trace or a log: values of environment variables that look like secrets (names ending in `KEY`, `TOKEN`, `SECRET`, `PASSWORD`) and anything matching `guardrails.redact_patterns` (emails and API-key formats) are replaced with `[redacted:...]`. By default the same redaction also applies to what tools return to the model and to the model's final answer, so a secret in a tool result is never repeated to the user. If a tool must hand emails to the model, change `guardrails.redact_at`:
+
+```yaml
+guardrails:
+  redact_at: [final_answer]          # any of: user_input, tool_output, final_answer
+```
+
 ## Have a conversation
 
 `run` answers one request. `chat` keeps the conversation, so each message sees the earlier ones:
@@ -245,7 +262,7 @@ agent = AgentSpec(
 | `agentkit tools list`, `describe <tool>`, `call <tool> --args '{...}'` | Inspect and try tools. |
 | `agentkit models list [--local]`, `agentkit models test <role>` | See and check models. |
 | `agentkit config show`, `agentkit config validate` | Inspect configuration. |
-| `agentkit doctor` | Check configuration, credentials and the local model server. |
+| `agentkit doctor [--offline]` | Check configuration and credentials, and that each model in use can be reached. |
 
 Every command takes `--project-dir <dir>` and `--env <name>`.
 

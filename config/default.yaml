@@ -53,7 +53,9 @@ tools:
 
 guardrails:
   approval_channel: cli         # cli | callback | auto_deny | auto_approve (tests only)
-  redact_patterns: [email, api_key]   # applied to traces before they are written
+  redact_patterns: [email, api_key]   # email | api_key; always applied to traces and logs
+  redact_at: [tool_output, final_answer]  # also hide them from the model here; any of
+                                          # user_input, tool_output, final_answer, or []
   max_identical_tool_calls: 3   # the same tool call more often than this stalls the run
   max_empty_steps: 2            # consecutive steps with neither a tool call nor an answer
 

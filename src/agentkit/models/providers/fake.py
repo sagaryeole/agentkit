@@ -76,5 +76,8 @@ class FakeProvider:
             yield StreamEvent(type="text_delta", text=response.message.text)
         yield StreamEvent(type="done", response=response)
 
+    async def ping(self) -> str:
+        return "scripted model; nothing to connect to"
+
     async def count_tokens(self, req: ModelRequest) -> int:
         return estimate_tokens(req)

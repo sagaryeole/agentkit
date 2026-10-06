@@ -242,6 +242,35 @@ class OpenAICompatProvider:
         }
         yield StreamEvent(type="done", response=self._response(completion))
 
+    async def ping(self) -> str:
+        """Check that the endpoint answers, accepts the key and knows the model ID.
+        Free: it lists models rather than generating anything."""
+        async with self._client() as client:
+            try:
+                resp = await client.get(f"{self.api_base}/models")
+            except httpx.TransportError as exc:
+                raise self._connection_error(exc) from exc
+        if resp.status_code in (401, 403):
+            raise ModelError(
+                f"{self.api_base} rejected the API key (HTTP {resp.status_code}). "
+                "Check that it is correct and has access."
+            )
+        if resp.status_code in (404, 405):
+            return f"{self.api_base} answers, but does not list models, so the ID was not checked"
+        if resp.status_code != 200:
+            raise self._status_error(resp.status_code, resp.text)
+        try:
+            ids = [str(m["id"]).removeprefix("models/") for m in resp.json()["data"]]
+        except (ValueError, KeyError, TypeError):
+            return f"{self.api_base} answers, but its model list was not readable"
+        if ids and self.model_id not in ids:
+            shown = ", ".join(ids[:10]) + (" ..." if len(ids) > 10 else "")
+            raise ModelError(
+                f"{self.api_base} does not offer a model '{self.model_id}'. Offered: {shown}. "
+                "Fix model_id in the models config."
+            )
+        return f"{self.api_base} answers and offers '{self.model_id}'"
+
     async def count_tokens(self, req: ModelRequest) -> int:
         # The protocol has no counting endpoint, so this is an estimate.
         return estimate_tokens(req)

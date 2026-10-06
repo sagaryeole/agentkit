@@ -47,9 +47,10 @@ What the kit does:
 
 - `http_fetch` fetches nothing until `allowed_domains` is configured, and then only those domains. It refuses non-http schemes and loopback, link-local and private addresses, connects to the address it checked rather than resolving the name again, and applies the same checks to every redirect.
 - Falling back from a local model to a hosted one is off unless configured on a role mapped to a local model, so data does not leave the machine implicitly.
-- Secrets come from the environment, never from YAML. Before a trace is written, the values of secret-looking environment variables and anything matching `guardrails.redact_patterns` are redacted. `observability.capture_content: false` stores metadata only.
+- Secrets come from the environment, never from YAML. Before a trace is written or a log line is emitted, the values of secret-looking environment variables and anything matching `guardrails.redact_patterns` (emails and API-key shapes by default) are redacted. `observability.capture_content: false` stores metadata only.
+- The same redactor also runs on what the model is given and says: by default on tool output and on the final answer (`guardrails.redact_at`), so a secret a tool returns never reaches the model and cannot be repeated to the user. It does not run on the user's own input unless you add `user_input`. A tool that must return emails to the model needs `tool_output` removed from `redact_at`.
 
-What remains: conversation history and session notes are stored unredacted in the project's `.agentkit/memory.db`, so protect that file like the data it holds; an allowed domain that reflects or stores what it is sent, `web_search` queries (which go to the configured search service), and project tools that send data out. Setting `allowed_domains` to `*` removes the main protection. Redaction applies to traces; by default it does not change what the model sees.
+What remains: conversation history and session notes are stored unredacted in the project's `.agentkit/memory.db`, so protect that file like the data it holds; an allowed domain that reflects or stores what it is sent, `web_search` queries (which go to the configured search service), and project tools that send data out. Setting `allowed_domains` to `*` removes the main protection. Redaction is pattern based, so it catches the shapes it knows (emails, common key formats) and the values of secret-looking environment variables, not every kind of personal data or credential; it also does not apply to the user's input by default.
 
 ### 4. Runaway cost
 

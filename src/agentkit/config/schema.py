@@ -6,7 +6,9 @@ fields have no Python default: the YAML is the single place defaults live.
 
 from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from agentkit.guardrails.patterns import PATTERNS
 
 ApprovalPolicy = Literal["require", "allow", "deny"]
 SideEffects = Literal["none", "read_external", "write", "destructive"]
@@ -132,9 +134,20 @@ class Tools(_Section):
 
 class Guardrails(_Section):
     approval_channel: Literal["cli", "callback", "auto_deny", "auto_approve"]
-    redact_patterns: list[str] = []
+    redact_patterns: list[str] = []  # names from guardrails/patterns.py
+    # Where the redactor also runs, so the model never sees what it removes. Traces are
+    # always redacted. A tool that must return what the patterns match needs this changed.
+    redact_at: list[Literal["user_input", "tool_output", "final_answer"]] = []
     max_identical_tool_calls: int = Field(ge=1)  # the same call more often than this stalls the run
     max_empty_steps: int = Field(ge=1)  # consecutive steps with neither a tool call nor an answer
+
+    @field_validator("redact_patterns")
+    @classmethod
+    def _known_patterns(cls, names: list[str]) -> list[str]:
+        unknown = [name for name in names if name not in PATTERNS]
+        if unknown:
+            raise ValueError(f"unknown redaction pattern {unknown}; available: {list(PATTERNS)}")
+        return names
 
 
 class Observability(_Section):

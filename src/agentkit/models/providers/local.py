@@ -108,6 +108,18 @@ class LocalProvider(OpenAICompatProvider):
             )
         self._checked = True
 
+    async def ping(self) -> str:
+        available = await list_local_models(
+            self.api_base, server=self.server, api_key=self.api_key, transport=self._transport
+        )
+        if not self.model_id:
+            return (
+                f"{self.server} server answers and offers {len(available)} model(s); no model "
+                "is selected yet (set LOCAL_MODEL_ID)"
+            )
+        await self._preflight()
+        return f"{self.server} server answers and has '{self.model_id}'"
+
     def _connection_error(self, exc: Exception) -> ModelError:
         return ModelError(
             f"Lost the connection to the {self.server} server at {self.api_base} ({exc}). "

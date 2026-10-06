@@ -208,6 +208,13 @@ class AnthropicProvider:
             raise _translate(exc) from exc
         yield StreamEvent(type="done", response=from_anthropic_message(message))
 
+    async def ping(self) -> str:
+        """Count the tokens of a one-word message. Free, and it fails for bad credentials
+        or an unknown model ID, which is what a connectivity check should find."""
+        probe = ModelRequest(messages=[Message.from_text("user", "ping")])
+        await self.count_tokens(probe)
+        return f"Anthropic API answers and accepts '{self.model_id}'"
+
     async def count_tokens(self, req: ModelRequest) -> int:
         try:
             result = await self._client.messages.count_tokens(**self._shared_kwargs(req))

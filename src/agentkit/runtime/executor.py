@@ -75,6 +75,9 @@ async def execute_tool(
         if result.error is not None:
             span.set(error_kind=result.error.kind)
             span.set_content(error=result.error.message)
+            ctx.logger.warning(
+                "tool %s failed (%s): %s", tool.name, result.error.kind, result.error.message
+            )
         else:
             span.set_content(result=result.content)
         return result
@@ -156,7 +159,7 @@ async def _execute(
             retryable=True,
         )
     except Exception as exc:  # a tool never raises to the model
-        ctx.logger.exception("tool %s failed", tool.name, extra={"run_id": ctx.run_id})
+        ctx.logger.exception("tool %s raised an unexpected error", tool.name)
         return failed(
             "internal",
             f"{tool.name} failed unexpectedly ({type(exc).__name__}: {exc}). "

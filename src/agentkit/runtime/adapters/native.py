@@ -80,6 +80,7 @@ class NativeAdapter:
         self, spec: AgentSpec, input: str | list[Message], ctx: RunContext, resume: Resume | None
     ) -> AsyncIterator[RunEvent]:
         caller = ctx.tracer.agent_name
+        ctx.logger.debug("run started (agent %s, model %s)", spec.name, spec.model)
         ctx.tracer.agent_name = spec.name
         with ctx.tracer.span("run", spec.name, model=spec.model) as span:
             span.set_content(input=input if isinstance(input, str) else None)
@@ -97,6 +98,7 @@ class NativeAdapter:
                     span.set_content(output=result.output)
                     if result.error is not None:
                         span.fail(f"{result.error.kind}: {result.error.message}")
+                    ctx.log_result(result)
                 yield event
         ctx.tracer.agent_name = caller or spec.name
 
