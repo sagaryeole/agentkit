@@ -34,6 +34,14 @@ def test_every_builtin_declares_its_side_effects() -> None:
         "read_file": "none",
         "list_files": "none",
         "http_fetch": "read_external",
+        "search_files": "none",
+        "write_file": "write",
+        "web_search": "read_external",
+        "sql_query": "none",
+        "ask_human": "none",
+        "remember": "write",
+        "recall": "none",
+        "finish": "none",
     }
 
 

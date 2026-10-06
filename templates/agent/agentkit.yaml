@@ -1,0 +1,10 @@
+# Configuration for __PROJECT_NAME__. Anything not set here comes from the kit's defaults;
+# run `agentkit config show` to see the merged result.
+
+tools:
+  enabled: [calculator]         # builtin tools this project uses; `agentkit tools list`
+
+# The model roles (default, fast, reasoning, judge) come from the kit's catalogue.
+# To run everything on a local model instead, uncomment:
+# models:
+#   provider: local

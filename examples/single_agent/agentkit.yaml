@@ -1,0 +1,6 @@
+# A single agent with one tool. Run from this directory:
+#   agentkit run single_agent "What is 17 times 23?"
+#   agentkit eval run evals/
+
+tools:
+  enabled: [calculator]

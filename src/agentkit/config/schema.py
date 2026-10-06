@@ -31,6 +31,8 @@ class ModelCapabilities(_Section):
 class ModelEntry(_Section):
     provider: str
     model_id: str
+    api_base: str | None = None  # openai, google, openai_compat: endpoint, including /v1
+    api_key_env: str | None = None  # openai, google, openai_compat: variable holding the key
     defaults: dict[str, Any] = {}
     capabilities: ModelCapabilities | None = None
 
@@ -110,6 +112,8 @@ class Tools(_Section):
 class Guardrails(_Section):
     approval_channel: Literal["cli", "callback", "auto_deny", "auto_approve"]
     redact_patterns: list[str] = []
+    max_identical_tool_calls: int = Field(ge=1)  # the same call more often than this stalls the run
+    max_empty_steps: int = Field(ge=1)  # consecutive steps with neither a tool call nor an answer
 
 
 class Observability(_Section):
@@ -121,8 +125,13 @@ class Observability(_Section):
 
 class Evals(_Section):
     dataset_dir: str
+    results_dir: str
+    cassette_dir: str
     concurrency: int = Field(ge=1)
     judge_role: str
+    judge_min_score: float = Field(ge=0, le=1)  # an llm_judge score below this fails
+    fail_under: float = Field(ge=0, le=100)  # `eval run` fails below this pass rate, in percent
+    max_pass_rate_drop: float = Field(ge=0)  # `eval compare` fails beyond this drop, in points
 
 
 class Runtime(_Section):

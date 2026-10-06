@@ -2,7 +2,7 @@
 
 import os
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 from agentkit.config import Config, load_config
 from agentkit.config.schema import Price
@@ -66,7 +66,7 @@ def local_api_base(cfg: Config, environ: Mapping[str, str] | None = None) -> str
     return base
 
 
-def _capabilities(defaults: Capabilities, cfg: Config, key: str) -> Capabilities:
+def declared_capabilities(defaults: Capabilities, cfg: Config, key: str) -> Capabilities:
     declared = cfg.models.models[key].capabilities
     if declared is None:
         return defaults
@@ -84,7 +84,7 @@ def build_provider(
 
         return fake.FakeProvider(
             model_id=entry.model_id,
-            capabilities=_capabilities(fake.DEFAULT_CAPABILITIES, cfg, key),
+            capabilities=declared_capabilities(fake.DEFAULT_CAPABILITIES, cfg, key),
         )
     if entry.provider == "local":
         from agentkit.models.providers import local
@@ -97,7 +97,7 @@ def build_provider(
             api_base=local_api_base(cfg, environ),
             server=cfg.models.local.server,
             api_key=environ.get("LOCAL_API_KEY") or cfg.models.local.api_key,
-            capabilities=_capabilities(local.DEFAULT_CAPABILITIES, cfg, key),
+            capabilities=declared_capabilities(local.DEFAULT_CAPABILITIES, cfg, key),
         )
     if entry.provider == "anthropic":
         try:
@@ -109,11 +109,49 @@ def build_provider(
             ) from exc
         return anthropic.AnthropicProvider(
             entry.model_id,
-            capabilities=_capabilities(anthropic.DEFAULT_CAPABILITIES, cfg, key),
+            capabilities=declared_capabilities(anthropic.DEFAULT_CAPABILITIES, cfg, key),
         )
+    if entry.provider in ("openai", "google", "openai_compat"):
+        return _openai_style(cfg, key, environ)
     raise ModelError(
         f"Model '{key}' uses provider '{entry.provider}', which this version does not ship. "
-        "Available providers: anthropic, local, fake."
+        "Available providers: anthropic, openai, google, openai_compat, local, fake."
+    )
+
+
+def _openai_style(cfg: Config, key: str, environ: Mapping[str, str]) -> ModelProvider:
+    """OpenAI, Gemini, or any other endpoint that speaks the chat-completions protocol."""
+    from agentkit.models.providers import google, openai, openai_compat
+
+    entry = cfg.models.models[key]
+    if entry.provider == "openai_compat":
+        if not entry.api_base:
+            raise ModelError(
+                f"Model '{key}' uses provider 'openai_compat', so its endpoint must be given. "
+                "Set api_base for it in the models config, including '/v1'."
+            )
+        api_key = environ.get(entry.api_key_env, "") if entry.api_key_env else "none"
+        if not api_key:
+            raise ModelError(f"Model '{key}' needs an API key. Set {entry.api_key_env}.")
+        return openai_compat.OpenAICompatProvider(
+            entry.model_id,
+            api_base=entry.api_base,
+            api_key=api_key,
+            capabilities=declared_capabilities(openai.DEFAULT_CAPABILITIES, cfg, key),
+        )
+    module = openai if entry.provider == "openai" else google
+    provider_class = openai.OpenAIProvider if entry.provider == "openai" else google.GoogleProvider
+    key_vars = (entry.api_key_env,) if entry.api_key_env else module.API_KEY_VARS
+    api_key = next((environ[var] for var in key_vars if environ.get(var)), "")
+    if not api_key:
+        raise ModelError(
+            f"Model '{key}' needs an API key. Set {' or '.join(key_vars)} in the environment."
+        )
+    return provider_class(
+        entry.model_id,
+        api_base=entry.api_base or module.DEFAULT_API_BASE,
+        api_key=api_key,
+        capabilities=declared_capabilities(module.DEFAULT_CAPABILITIES, cfg, key),
     )
 
 
@@ -128,10 +166,14 @@ def get_model(
     *,
     agent_name: str | None = None,
     environ: Mapping[str, str] | None = None,
+    provider_factory: Callable[[Config, str, Mapping[str, str] | None], ModelProvider]
+    | None = None,
 ) -> Model:
     """The model for a role ("default", "fast", ...) or, discouraged, an explicit model key.
 
     `agent_name` lets `<AGENT_NAME>_MODEL_PROVIDER` switch a single agent to or from local.
+    `provider_factory` replaces how each provider in the chain is built; evals use it to
+    record and replay responses.
     """
     cfg = cfg or load_config()
     links = []
@@ -143,7 +185,7 @@ def get_model(
         links.append(
             Link(
                 key=key,
-                provider=build_provider(cfg, key, environ),
+                provider=(provider_factory or build_provider)(cfg, key, environ),
                 timeout_seconds=timeout,
                 price=_price(cfg, key),
                 defaults=entry.defaults,

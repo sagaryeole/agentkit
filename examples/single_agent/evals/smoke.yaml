@@ -1,0 +1,56 @@
+# Starter evals for the single agent. The model's replies are scripted with
+# `fake_model`, so this suite needs no network and no API key. Remove a case's
+# `fake_model` (or run with --record) to exercise the configured model instead.
+
+suite: single_agent_smoke
+agent: single_agent
+defaults:
+  graders: [no_error, within_budget]
+
+cases:
+  - id: multiplies_with_the_calculator
+    input: "What is 17 times 23?"
+    setup:
+      fake_model:
+        - tool_call: { name: calculator, arguments: { expression: "17 * 23" } }
+        - text: "17 times 23 is 391."
+    expect:
+      tool_calls:
+        must_include:
+          - { name: calculator, arguments: { expression: "17 * 23" } }
+      output:
+        contains: ["391"]
+    graders:
+      - type: trajectory
+        tool_sequence: [calculator]
+        max_steps: 2
+    tags: [smoke]
+
+  - id: recovers_from_a_bad_expression
+    input: "What is seven squared?"
+    setup:
+      fake_model:
+        - tool_call: { name: calculator, arguments: { expression: "seven ** 2" } }
+        - tool_call: { name: calculator, arguments: { expression: "7 ** 2" } }
+        - text: "Seven squared is 49."
+    expect:
+      tool_calls:
+        in_order: [calculator, calculator]
+      output:
+        regex: "\\b49\\b"
+    tags: [smoke]
+
+  - id: answers_without_a_tool_when_none_is_needed
+    input: "Say hello."
+    setup:
+      fake_model:
+        - text: "Hello!"
+    expect:
+      tool_calls:
+        must_not_include: [calculator]
+      output:
+        exact: "Hello!"
+    graders:
+      - type: llm_judge
+        rubric: "The reply is a greeting."
+    tags: [smoke]

@@ -1,0 +1,13 @@
+# Scripted results for the file and web tools, so the suite needs no files and no network.
+tools:
+  list_files:
+    - when: { path: "." }
+      returns:
+        - { name: notes.txt, type: file, size: 21 }
+  read_file:
+    - when: { path: notes.txt }
+      returns: { path: notes.txt, content: "The launch is on Friday.", total_chars: 24, next_offset: null }
+    - error: { kind: not_found, message: "That file does not exist. Use list_files to see what exists." }
+  http_fetch:
+    - when: { url: "https://example.com/" }
+      returns: { url: "https://example.com/", status: 200, content_type: text/html, text: "Example Domain", truncated: false }

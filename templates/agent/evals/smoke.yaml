@@ -1,0 +1,48 @@
+# Starter evals. The model's replies are scripted with `fake_model`, so this suite
+# passes with no network and no API key and checks the wiring: prompt, tools, limits.
+# To evaluate a real model, delete `fake_model` from a case, or run with --record.
+
+suite: __AGENT_NAME___smoke
+agent: __AGENT_NAME__
+defaults:
+  graders: [no_error, within_budget]
+
+cases:
+  - id: uses_the_calculator
+    input: "What is 17 times 23?"
+    setup:
+      fake_model:
+        - tool_call: { name: calculator, arguments: { expression: "17 * 23" } }
+        - text: "17 times 23 is 391."
+    expect:
+      tool_calls:
+        must_include: [calculator]
+      output:
+        contains: ["391"]
+    tags: [smoke]
+
+  - id: uses_the_project_tool
+    input: "How many words are in 'the quick brown fox'?"
+    setup:
+      fake_model:
+        - tool_call: { name: word_count, arguments: { text: "the quick brown fox" } }
+        - text: "That is 4 words."
+    expect:
+      tool_calls:
+        must_include: [word_count]
+      output:
+        regex: "\\b4\\b"
+    tags: [smoke]
+
+  - id: answers_directly
+    input: "Say hello."
+    setup:
+      fake_model:
+        - text: "Hello!"
+    expect:
+      tool_calls:
+        must_not_include: [calculator, word_count]
+    graders:
+      - type: llm_judge
+        rubric: "The reply is a greeting."
+    tags: [smoke]

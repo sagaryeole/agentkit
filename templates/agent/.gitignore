@@ -1,0 +1,5 @@
+.env
+.venv/
+.agentkit/
+__pycache__/
+workspace/

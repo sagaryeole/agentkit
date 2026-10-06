@@ -46,6 +46,7 @@ class ToolResult(BaseModel):
     error: ToolError | None = None
     content: str
     truncated: bool = False
+    approval: str | None = None  # approved, edited, denied or denied_by_policy, when one applied
     duration_seconds: float
 
 

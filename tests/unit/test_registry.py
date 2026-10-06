@@ -4,8 +4,13 @@ import pytest
 
 from agentkit.config import Config, load_config
 from agentkit.errors import ModelError
+from agentkit.models import Message, ModelRequest
+from agentkit.models.base import Capabilities
 from agentkit.models.providers.fake import FakeProvider
+from agentkit.models.providers.google import GoogleProvider
 from agentkit.models.providers.local import LocalProvider
+from agentkit.models.providers.openai import OpenAIProvider
+from agentkit.models.providers.openai_compat import OpenAICompatProvider
 from agentkit.models.registry import get_model, resolve_chain
 
 
@@ -103,10 +108,67 @@ def test_custom_server_needs_a_base_url(tmp_path: Path) -> None:
 
 
 def test_unshipped_provider_is_a_clear_error(tmp_path: Path) -> None:
-    entry = {"provider": "openai", "model_id": "x"}
-    cfg = config(tmp_path, models={"models": {"openai/x": entry}})
-    with pytest.raises(ModelError, match="Available providers: anthropic, local, fake"):
-        get_model("openai/x", cfg, environ={})
+    entry = {"provider": "mistral", "model_id": "x"}
+    cfg = config(tmp_path, models={"models": {"mistral/x": entry}})
+    with pytest.raises(ModelError, match="Available providers: anthropic, openai, google"):
+        get_model("mistral/x", cfg, environ={})
+
+
+def test_openai_google_and_compatible_endpoints_are_built_from_the_catalogue(
+    tmp_path: Path,
+) -> None:
+    catalogue = {
+        "openai/m": {"provider": "openai", "model_id": "m"},
+        "google/g": {"provider": "google", "model_id": "g"},
+        "gateway/x": {
+            "provider": "openai_compat",
+            "model_id": "x",
+            "api_base": "https://gw.example.com/v1",
+            "api_key_env": "GW_KEY",
+        },
+        "open/y": {"provider": "openai_compat", "model_id": "y", "api_base": "http://h:1/v1"},
+        "nobase/z": {"provider": "openai_compat", "model_id": "z"},
+    }
+    cfg = config(tmp_path, models={"models": catalogue})
+    environ = {"OPENAI_API_KEY": "k-openai", "GEMINI_API_KEY": "k-gemini", "GW_KEY": "k-gw"}
+
+    def provider(key: str) -> OpenAICompatProvider:
+        built = get_model(key, cfg, environ=environ).chain[0].provider
+        assert isinstance(built, OpenAICompatProvider)
+        return built
+
+    openai = provider("openai/m")
+    assert (openai.name, openai.api_base, openai.api_key) == (
+        "openai",
+        "https://api.openai.com/v1",
+        "k-openai",
+    )
+    google = provider("google/g")
+    assert google.name == "google" and google.api_key == "k-gemini"
+    assert google.api_base == "https://generativelanguage.googleapis.com/v1beta/openai"
+    assert google.capabilities.context_window == 1_000_000
+    gateway = provider("gateway/x")
+    assert (gateway.api_base, gateway.api_key) == ("https://gw.example.com/v1", "k-gw")
+    assert provider("open/y").api_key == "none"  # an endpoint that needs no key
+
+    with pytest.raises(ModelError, match="Set OPENAI_API_KEY"):
+        get_model("openai/m", cfg, environ={})
+    with pytest.raises(ModelError, match="Set GOOGLE_API_KEY or GEMINI_API_KEY"):
+        get_model("google/g", cfg, environ={})
+    with pytest.raises(ModelError, match="Set GW_KEY"):
+        get_model("gateway/x", cfg, environ={})
+    with pytest.raises(ModelError, match="Set api_base"):
+        get_model("nobase/z", cfg, environ=environ)
+
+
+async def test_openai_renames_the_output_token_limit() -> None:
+    caps = Capabilities(context_window=1000, max_output_tokens=100)
+    request = ModelRequest(messages=[Message.from_text("user", "hi")], max_output_tokens=50)
+    openai = OpenAIProvider("m", api_base="https://x/v1", api_key="k", capabilities=caps)
+    assert openai._payload(request)["max_completion_tokens"] == 50
+    assert "max_tokens" not in openai._payload(request)
+    google = GoogleProvider("g", api_base="https://x/v1", api_key="k", capabilities=caps)
+    assert google._payload(request)["max_tokens"] == 50
 
 
 def test_fake_provider_is_built_for_the_fake_entry(tmp_path: Path) -> None:

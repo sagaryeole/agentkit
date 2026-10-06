@@ -30,16 +30,24 @@ tools:
     by_side_effects:            # classes not listed here use `default`
       none: allow
       read_external: allow
-    overrides: {}               # per tool name; the only way to allow a destructive tool
+    overrides:                  # per tool name; the only way to allow a destructive tool
+      remember: allow           # writes only to the session's own notes
   settings:
     http_fetch:
       allowed_domains: []       # nothing is fetchable until listed, e.g. ["*.example.com"]; "*" allows all
     filesystem:
       root: ./workspace
+    web_search:
+      backend: searxng
+      base_url: null            # address of your SearXNG instance, e.g. http://127.0.0.1:8080
+    sql_query:
+      database: null            # path of a SQLite file; it is opened read-only
 
 guardrails:
   approval_channel: cli         # cli | callback | auto_deny | auto_approve (tests only)
-  redact_patterns: [email, api_key]
+  redact_patterns: [email, api_key]   # applied to traces before they are written
+  max_identical_tool_calls: 3   # the same tool call more often than this stalls the run
+  max_empty_steps: 2            # consecutive steps with neither a tool call nor an answer
 
 observability:
   exporter: jsonl               # jsonl | otlp | console | none
@@ -49,8 +57,13 @@ observability:
 
 evals:
   dataset_dir: ./evals
+  results_dir: ./.agentkit/evals
+  cassette_dir: ./evals/cassettes
   concurrency: 4
   judge_role: judge
+  judge_min_score: 0.7          # an llm_judge score below this fails the case
+  fail_under: 100               # `eval run` exits non-zero below this pass rate (percent)
+  max_pass_rate_drop: 2         # `eval compare` exits non-zero beyond this drop (points)
 
 runtime:
   adapter: native               # native | adk | langgraph | claude_sdk

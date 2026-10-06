@@ -55,6 +55,23 @@ models:
       vision: false
       context_window: 8192
 
+  # Other providers ship without catalogue entries, because model IDs change. Add your own,
+  # with the ID exactly as the provider lists it, then point a role or a fallback at it:
+  #
+  # openai/<model-id>:
+  #   provider: openai            # reads OPENAI_API_KEY
+  #   model_id: <model-id>
+  # google/<model-id>:
+  #   provider: google            # reads GOOGLE_API_KEY or GEMINI_API_KEY
+  #   model_id: <model-id>
+  # gateway/<model-id>:
+  #   provider: openai_compat     # any endpoint that speaks the OpenAI chat-completions API
+  #   model_id: <model-id>
+  #   api_base: https://gateway.example.com/v1
+  #   api_key_env: GATEWAY_API_KEY
+  #
+  # Add a matching entry to pricing.yaml to get cost tracking.
+
   # Scripted provider for tests and evals: no network, no key.
   fake/default:
     provider: fake

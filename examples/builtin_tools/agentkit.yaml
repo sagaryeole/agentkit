@@ -1,0 +1,8 @@
+# One agent with every builtin tool, mainly as a home for their eval cases.
+#   agentkit eval run evals/
+
+tools:
+  enabled: [calculator, current_time, read_file, list_files, http_fetch]
+  settings:
+    http_fetch:
+      allowed_domains: ["example.com"]

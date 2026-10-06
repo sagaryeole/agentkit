@@ -15,7 +15,9 @@ from agentkit.errors import ModelError
 from agentkit.models import Message, ModelRequest, get_model
 from agentkit.models.providers.local import list_local_models
 from agentkit.models.registry import local_api_base
-from examples.single_agent.agent import run
+from agentkit.runtime.adapters import get_adapter
+from agentkit.runtime.context import RunContext
+from agentkit.runtime.project import load_project
 
 REQUEST = ModelRequest(messages=[Message.from_text("user", "Reply with the single word: ok")])
 
@@ -49,7 +51,14 @@ async def test_local_model_streams(local_config) -> None:  # type: ignore[no-unt
 
 @pytest.mark.local_model
 async def test_example_agent_uses_its_tool_on_a_local_model(local_config) -> None:  # type: ignore[no-untyped-def]
-    assert await run("What is 1717 times 2323?", local_config)
+    root = Path(__file__).parents[2] / "examples" / "single_agent"
+    cfg = load_config(root)
+    project = load_project(root, cfg)
+    adapter = get_adapter(cfg, project.registry, root)
+    result = await adapter.run(
+        project.agent("single_agent"), "What is 1717 times 2323?", RunContext(cfg)
+    )
+    assert result.stop_reason == "completed" and result.tool_calls >= 1
 
 
 @pytest.mark.integration

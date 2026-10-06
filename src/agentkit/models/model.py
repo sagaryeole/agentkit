@@ -63,6 +63,9 @@ async def generate_json(provider: ModelProvider, req: ModelRequest) -> ModelResp
             req.model_copy(update={"messages": messages, "response_schema": None})
         )
         usage = usage.plus(response.usage)
+        if response.message.tool_calls:
+            # A tool call is not the final answer; the schema applies to the reply after it.
+            return response.model_copy(update={"usage": usage})
         text = response.message.text.strip().removeprefix("```json").strip("`").strip()
         try:
             jsonschema.validate(json.loads(text), schema)

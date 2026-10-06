@@ -2,7 +2,20 @@
 
 A reusable foundation for building AI agent projects: shared tools, an eval harness, a provider-independent model layer, configuration, guardrails and observability, plus a template for starting new agents.
 
-The design and build order are in [AGENTIC_FRAMEWORK_SPEC.md](AGENTIC_FRAMEWORK_SPEC.md). Milestones M1 (skeleton and configuration), M2 (model layer: Anthropic, local and fake providers) and M3 (tool contract, registry, executor and five builtin tools) are implemented; later milestones are not yet.
+The design and build order are in [AGENTIC_FRAMEWORK_SPEC.md](AGENTIC_FRAMEWORK_SPEC.md). Milestones M1 to M7 are implemented: configuration, the model layer, tools, the native runtime with budgets and approvals, tracing, evals, and project scaffolding. The ADK adapter and multi-agent patterns (M8) and the documentation (M9) are not built yet.
+
+## Quick start
+
+```
+uv sync
+uv run agentkit new my-agent
+cd my-agent
+uv run --project .. agentkit eval run evals/        # starter evals; no API key needed
+uv run --project .. agentkit run my_agent "What is 17 times 23?"
+uv run --project .. agentkit trace <run id>
+```
+
+`examples/single_agent` and `examples/builtin_tools` are complete projects with eval suites.
 
 ## Development
 
