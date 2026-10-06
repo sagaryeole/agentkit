@@ -71,3 +71,18 @@ def finish(summary: str, result: dict[str, Any] | None = None) -> str:
         result: The structured result, when the task asks for one.
     """
     return "Task complete."
+
+
+@tool(side_effects="none", tags=["control"])
+def handoff(agent: str, message: str) -> str:
+    """Transfer the task to another agent, which takes over and gives the final answer.
+
+    Use this when the request belongs to one of the agents listed below.
+    Do not use it to ask another agent a question and continue yourself.
+
+    Args:
+        agent: Name of the agent to transfer to.
+        message: The task for that agent, with every detail it needs; it does not see
+            this conversation.
+    """
+    return f"Transferred to {agent}."

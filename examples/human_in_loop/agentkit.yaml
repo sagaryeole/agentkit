@@ -1,0 +1,9 @@
+# Human in the loop: side-effecting steps wait for the operator, and the agent can ask.
+#   agentkit run notetaker "Save a note that the launch is on Friday."
+#   agentkit eval run evals/
+#
+# write_file has side effects, so by default every call asks for approval at the terminal
+# (guardrails.approval_channel: cli). ask_human puts the agent's question to the operator.
+
+tools:
+  enabled: [write_file, read_file, ask_human]

@@ -1,0 +1,56 @@
+# The model's replies are scripted, so this checks the routing mechanics: the router
+# hands off, the chosen specialist takes over, and its answer is the run's answer.
+
+suite: router
+agent: support
+defaults:
+  graders: [no_error]
+
+cases:
+  - id: billing_request_goes_to_billing
+    input: "I was charged 19.99 twice for order 1182."
+    setup:
+      fake_model:
+        - tool_call:
+            name: handoff
+            arguments: { agent: billing, message: "Customer was charged 19.99 twice for order 1182." }
+        - tool_call: { name: calculator, arguments: { expression: "19.99 * 1" } }
+        - text: "You are owed 19.99; the refund has been requested for review."
+    expect:
+      tool_calls:
+        must_include:
+          - { name: handoff, arguments: { agent: billing } }
+        in_order: [handoff, calculator]
+      output:
+        contains: ["19.99"]
+    tags: [smoke]
+
+  - id: shipping_request_goes_to_shipping
+    input: "Where is my parcel?"
+    setup:
+      fake_model:
+        - tool_call: { name: handoff, arguments: { agent: shipping, message: "Customer asks where their parcel is." } }
+        - text: "It should arrive within three working days; please send your order number."
+    expect:
+      tool_calls:
+        must_include:
+          - { name: handoff, arguments: { agent: shipping } }
+        must_not_include: [calculator]
+      output:
+        contains: ["order number"]
+    tags: [smoke]
+
+  - id: unknown_route_is_reported_back_to_the_router
+    input: "Can you fix my laptop?"
+    setup:
+      fake_model:
+        - tool_call: { name: handoff, arguments: { agent: repairs, message: "Laptop repair." } }
+        - text: "Sorry, we only help with billing and shipping."
+    expect:
+      output:
+        contains: ["billing and shipping"]
+    graders:
+      - type: trajectory
+        tool_sequence: [handoff]
+        max_steps: 2
+    tags: [smoke]

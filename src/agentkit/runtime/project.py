@@ -14,6 +14,7 @@ from agentkit.tools.base import Tool
 from agentkit.tools.registry import ToolRegistry
 
 PACKAGES = ("tools", "agents")
+_loaded_root: Path | None = None  # the project whose modules are currently imported
 
 
 @dataclass
@@ -22,7 +23,13 @@ class Project:
     config: Config
     registry: ToolRegistry
     agents: dict[str, AgentSpec] = field(default_factory=dict)
+    workflows: dict[str, BaseModel] = field(default_factory=dict)  # patterns.workflow.Workflow
     schemas: dict[str, type[BaseModel]] = field(default_factory=dict)
+
+    def require(self, name: str) -> None:
+        """Raise unless `name` is something this project can run."""
+        if name not in self.workflows:
+            self.agent(name)
 
     def agent(self, name: str) -> AgentSpec:
         if name not in self.agents:
@@ -41,9 +48,17 @@ def load_project(root: Path, cfg: Config) -> Project:
     """
     root = root.resolve()
     project = Project(root=root, config=cfg, registry=ToolRegistry.from_config(cfg))
-    # A project's modules are imported as `tools.x` and `agents.x`; forget another project's.
-    for name in [m for m in sys.modules if m.split(".")[0] in PACKAGES]:
-        del sys.modules[name]
+    # A project's modules are imported as `tools.x`, `agents.x` and whatever else it has
+    # (custom graders, say). Forget the previous project's, which may share those names.
+    global _loaded_root
+    for name, module in list(sys.modules.items()):
+        file = getattr(module, "__file__", None)
+        stale = _loaded_root is not None and file and Path(file).is_relative_to(_loaded_root)
+        if stale or name.split(".")[0] in PACKAGES:
+            del sys.modules[name]
+    if _loaded_root is not None:
+        sys.path[:] = [p for p in sys.path if p != str(_loaded_root)]
+    _loaded_root = root
     sys.path[:] = [p for p in sys.path if p != str(root)]
     sys.path.insert(0, str(root))
     importlib.invalidate_caches()
@@ -65,6 +80,8 @@ def load_project(root: Path, cfg: Config) -> Project:
                     registered.add(id(value))
                 elif isinstance(value, AgentSpec):
                     project.agents[value.name] = value
+                elif type(value).__name__ == "Workflow" and isinstance(value, BaseModel):
+                    project.workflows[str(getattr(value, "name", ""))] = value
                 elif (
                     isinstance(value, type)
                     and issubclass(value, BaseModel)

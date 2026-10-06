@@ -21,8 +21,9 @@ uv run agentkit config validate | show    # every command takes --env <name>, --
 uv run agentkit doctor
 uv run agentkit models list [--local] | test <role>
 uv run agentkit tools list | describe <tool> | call <tool> --args '{"expression": "6*7"}'
-uv run agentkit new <name> [--dir <parent>]
-uv run agentkit run <agent> "<input>" [--model <role>] --project-dir examples/single_agent
+uv run agentkit new <name> [--pattern single|router|workflow] [--dir <parent>]
+uv run agentkit run <agent or workflow> "<input>" [--model <role>] --project-dir examples/single_agent
+AGENTKIT_RUNTIME__ADAPTER=adk uv run agentkit run ...     # same agent on Google ADK
 uv run agentkit trace <run id>
 uv run agentkit eval run [path] [--tags smoke] [--repeat N] [--live] [--record | --replay]
 uv run agentkit eval report [run] | compare <baseline> <candidate>
@@ -32,22 +33,23 @@ MODEL_PROVIDER=local LOCAL_MODEL_ID=<id> uv run pytest tests/integration -m loca
 uv run pytest tests/integration -m integration        # needs ANTHROPIC_API_KEY
 ```
 
-CI (`.github/workflows/ci.yml`) runs ruff, mypy, pytest, the smoke evals of both example projects, and a `pip-audit` scan of the locked dependencies.
+CI (`.github/workflows/ci.yml`) runs ruff, mypy, pytest, the smoke evals of every example project (and of `single_agent` again on the ADK adapter), and a `pip-audit` scan of the locked dependencies.
 
 ## Build status
 
 Milestones are built strictly in order; a milestone does not start until the previous one meets its acceptance criteria in spec section 17.
 
-- **M1–M7: done**, with these gaps:
+- **M1–M8: done**, with these gaps:
   - The Anthropic, OpenAI and Google providers have never been run against the real APIs (no credentials were available). Their request building and error mapping are unit-tested only. The Google provider goes through Gemini's OpenAI-compatible endpoint rather than its native API.
+  - The ADK adapter has been run live only against a local model through LiteLLM. Its Gemini and Anthropic mappings are checked by a unit test, not by a call.
   - `web_search` (SearXNG) has only been tested against a mocked server.
   - `exporter: otlp` is rejected; only `jsonl`, `console` and `none` ship.
-  - Dropped or deferred by the owner: `run_python` (dropped for now), MCP tool loading (after M7).
-  - Deferred to M8 because they need sub-agents: the `handoff` tool, `AgentSpec.sub_agents` (the native adapter raises on them), and the `router`/`workflow` options of `agentkit new`.
-  - Not assigned to any milestone in the spec and not built: `SessionStore`, context-window management (section 12.4), and `agentkit chat`. Only the `StateStore` half of section 12 exists.
-- **M8 ADK adapter and patterns: next.** `patterns/` is a docstring-only placeholder. **M9** is documentation; `docs/` does not exist yet.
+  - Of the eight patterns in spec section 15, single agent, fixed workflow, router, hand-off and human in the loop exist. Planner/executor, parallel fan-out and evaluator/reviser are not built (M8's acceptance criteria name only router, workflow and human in the loop).
+  - Dropped or deferred by the owner: `run_python` (dropped for now), MCP tool loading, LangGraph and Claude Agent SDK adapters.
+  - Not assigned to any milestone in the spec and not built: `SessionStore`, context-window management (section 12.4), and `agentkit chat`. Only the `StateStore` half of section 12 exists. Trimming history needs care with Claude models, which reject edited history that contains thinking blocks.
+- **M9 documentation: next.** `docs/` does not exist yet.
 
-Decisions made by the owner: name `agentkit`, Python, Apache-2.0, Anthropic first, LM Studio as the default local server, SearXNG for `web_search`. Still open (spec section 21): whether LangGraph and Claude Agent SDK adapters are wanted.
+Decisions made by the owner: name `agentkit`, Python, Apache-2.0, Anthropic first, LM Studio as the default local server, SearXNG for `web_search`, ADK as the only library adapter.
 
 ## Rules from the spec that shape every change
 
@@ -102,14 +104,27 @@ Every tool call, from any adapter, an eval or `agentkit tools call`, goes throug
 
 ### Runtime
 
-`NativeAdapter` (`runtime/adapters/native.py`) is the reference loop and the one evals use. `_loop` is a single async generator of `RunEvent`s; `run`, `stream` and `resume` all consume it. Each turn: budget check, model call in a `model_call` span, then either a final answer (final-answer checks, `output_schema` validation) or the tool calls, each through `execute_tool`.
+`NativeAdapter` (`runtime/adapters/native.py`) is the reference loop and the default for tests and evals. `_loop` is a single async generator of `RunEvent`s; `run`, `stream` and `resume` all consume it. Each turn: budget check, model call in a `model_call` span, then either a final answer (final-answer checks, `output_schema` validation) or the tool calls, each through `execute_tool`.
 
 - Stop reasons: `completed`, `budget_exceeded` (the error names the limit; the last assistant text is returned as partial output), `stalled` (the same call more than `guardrails.max_identical_tool_calls` times, or `max_empty_steps` steps with neither a tool call nor text), `error`, `awaiting_approval`.
 - Resumable approvals: `awaiting_approval` carries a `PendingApproval` (plain data: transcript, earlier results of the turn, counters). `adapter.resume(spec, pending, decision, ctx)` continues from that tool call.
 - A successful call to a tool named `finish` ends the run with its `result` (or `summary`) as the output.
-- Setup mistakes (unknown tool name, a model without tool calling for an agent with tools, a missing prompt file) raise `AgentKitError` instead of returning a result.
-- `load_project` (`runtime/project.py`) imports a project's `tools/*.py` and `agents/*.py` as `tools.x` / `agents.x`, collecting `Tool`s, `AgentSpec`s and Pydantic models. It purges those module names from `sys.modules` first, so one process can load several projects, one at a time.
+- Hand-off: an agent with `sub_agents` gets the `handoff` tool automatically, its description listing those agents. A successful `handoff` runs the named agent as a nested run (child `run` span, same budget) on the handed-over message only, and that agent's result becomes the result of the whole run. The adapter is given the project's agents through `get_adapter(..., agents=...)`.
+- Setup mistakes (unknown tool name, an undefined sub-agent, a model without tool calling for an agent with tools, a missing prompt file) raise `AgentKitError` instead of returning a result.
+- `load_project` (`runtime/project.py`) imports a project's `tools/*.py` and `agents/*.py` as `tools.x` / `agents.x`, collecting `Tool`s, `AgentSpec`s, `Workflow`s and Pydantic models. It first drops those names, and every module imported from the previously loaded project, from `sys.modules`, so one process can load several projects, one at a time.
 - `AgentSpec.instructions` is prompt text or a path to a prompt file under the project; `{{name}}` placeholders are filled from `AgentSpec.variables`.
+
+### Patterns
+
+`patterns/` holds the shapes that are more than one `AgentSpec`. `router(name, description, routes)` returns an `AgentSpec` on the `fast` role whose only job is to `handoff`. `Workflow` is a list of agent names run in order under one run span and one budget, each step's output being the next step's input; it stops at the first step that does not complete. A project defines workflows next to its agents, and `run_named(project, adapter, name, input, ctx)` runs whichever of the two `name` is; `agentkit run` and the eval runner both go through it. Human in the loop needs no code: it is the approval gate plus the `ask_human` tool (`examples/human_in_loop`).
+
+### ADK adapter
+
+`AdkAdapter` (`runtime/adapters/adk.py`, extra `agentkit[adk]`, imported only when `runtime.adapter` is `adk`) builds an ADK `LlmAgent` per run; `to_native(spec)` returns it. Each kit tool becomes a `KitTool` whose `run_async` calls `execute_tool`, so approvals, budgets, timeouts and tracing are the kit's. Budget checks, usage, cost and the `model_call` span hang on ADK's before/after model callbacks.
+
+- Models: `google` entries are passed to ADK by ID, `anthropic` becomes `LiteLlm("anthropic/<id>")`, and local or other OpenAI-style endpoints become `LiteLlm("openai/<id>", api_base=...)`. The fake provider, and any model an eval injects (scripts, record, replay), run through `KitLlm`, an ADK model backed by the kit's model layer; that is what lets the same eval suite pass on both adapters.
+- The adapter's known gaps are listed in its module docstring: string input only, no resumable approvals, no `sub_agents`, the kit's retry/timeout/fallback do not apply to model calls ADK makes itself, and an unknown tool call fails the run.
+- `google-adk` caps `opentelemetry-api`, so keep the kit's own requirement on it loose. An over-tight pin once made `uv` silently resolve an old ADK with known vulnerabilities; `pip-audit` in CI is what catches that.
 
 ### Observability
 
@@ -119,11 +134,11 @@ Every tool call, from any adapter, an eval or `agentkit tools call`, goes throug
 
 ### Evals
 
-A suite (`evals/dataset.py`) is a YAML or JSONL file naming an agent and its cases. `expect:` is sugar that becomes graders; `Suite.graders_for` is the single place that order is defined. `run_suites` (`evals/runner.py`) runs each case through `NativeAdapter` with:
+A suite (`evals/dataset.py`) is a YAML or JSONL file naming an agent and its cases. `expect:` is sugar that becomes graders; `Suite.graders_for` is the single place that order is defined. `run_suites` (`evals/runner.py`) runs each case through the configured adapter (`get_adapter`) and `run_named`, with:
 
 - Tools from `eval_registry` (`evals/fakes.py`): unless `--live`, a tool with a fixture answers from it, a side-effect-free tool runs for real, and any other tool reports a missing fixture. Fixtures live in `fixtures/` next to the suite.
 - Approvals from `EvalApprovals`: everything side-effecting is denied unless the case lists it in `setup.approve_tools`.
-- A model chosen in this order: `--replay`/`--record` (cassette in `evals.cassette_dir`, via `get_model(provider_factory=...)`), else the case's `setup.fake_model` script, else the configured model. Replay never builds the real provider and uses the capabilities stored in the cassette, so its requests hash the same as when recorded.
+- A model chosen in this order: `--replay`/`--record` (cassette in `evals.cassette_dir`, via `get_model(provider_factory=...)`), else the case's `setup.fake_model` script (one script per attempt, shared by every agent in it, so a hand-off or workflow continues the same script), else the configured model. Replay never builds the real provider and uses the capabilities stored in the cassette, so its requests hash the same as when recorded.
 
 Graders (`evals/graders.py`) are async functions in the `GRADERS` dict. `llm_judge` uses the `judge` role, structured output, and the versioned prompt in `evals/prompts/`; it is skipped, not failed, when the judge is the fake provider. Results are saved as JSON under `evals.results_dir`; run IDs sort by time, which is what makes `latest` work. `eval run` exits 1 below `evals.fail_under`, `eval compare` beyond `evals.max_pass_rate_drop`.
 
@@ -133,4 +148,4 @@ The example projects under `examples/` and the template under `templates/agent/`
 
 - `ruff format` rewrites Python code blocks inside Markdown. `*.md` is excluded in `pyproject.toml` so the spec's snippets stay as written; keep that exclusion.
 - Tests run in a temporary working directory (`tests/conftest.py`), because traces and eval results are written relative to it.
-- Template files use `__AGENT_NAME__` and `__PROJECT_NAME__` as placeholders, not `{{...}}`, which is the prompt-variable syntax.
+- Template files use `__AGENT_NAME__` and `__PROJECT_NAME__` as placeholders, not `{{...}}`, which is the prompt-variable syntax. `templates/router` and `templates/workflow` are overlays copied over `templates/agent`; they mirror `examples/router` and `examples/workflow`, so change both.

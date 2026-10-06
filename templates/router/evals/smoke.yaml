@@ -1,0 +1,47 @@
+# Starter evals for the router. Replies are scripted with `fake_model`, so the suite
+# passes with no network and no API key and checks the hand-off mechanics.
+
+suite: __AGENT_NAME___smoke
+agent: __AGENT_NAME__
+defaults:
+  graders: [no_error, within_budget]
+
+cases:
+  - id: calculation_goes_to_numbers
+    input: "What is 17 times 23?"
+    setup:
+      fake_model:
+        - tool_call: { name: handoff, arguments: { agent: numbers, message: "What is 17 times 23?" } }
+        - tool_call: { name: calculator, arguments: { expression: "17 * 23" } }
+        - text: "17 times 23 is 391."
+    expect:
+      tool_calls:
+        in_order: [handoff, calculator]
+      output:
+        contains: ["391"]
+    tags: [smoke]
+
+  - id: text_question_goes_to_words
+    input: "How many words are in 'the quick brown fox'?"
+    setup:
+      fake_model:
+        - tool_call: { name: handoff, arguments: { agent: words, message: "Count the words in 'the quick brown fox'." } }
+        - tool_call: { name: word_count, arguments: { text: "the quick brown fox" } }
+        - text: "That is 4 words."
+    expect:
+      tool_calls:
+        must_include:
+          - { name: handoff, arguments: { agent: words } }
+          - word_count
+    tags: [smoke]
+
+  - id: unknown_route_is_reported_back
+    input: "Book me a flight."
+    setup:
+      fake_model:
+        - tool_call: { name: handoff, arguments: { agent: travel, message: "Book a flight." } }
+        - text: "Sorry, I can only help with numbers and text."
+    expect:
+      output:
+        contains: ["numbers and text"]
+    tags: [smoke]

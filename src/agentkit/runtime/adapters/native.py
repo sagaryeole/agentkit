@@ -1,9 +1,10 @@
 """The reference runtime: a minimal tool-calling loop on the kit's own model layer."""
 
+import dataclasses
 import json
 import time
 from collections import Counter
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,7 @@ from agentkit.runtime.spec import (
     StopReason,
 )
 from agentkit.tools.base import ToolError, ToolResult
+from agentkit.tools.builtin.session import handoff
 from agentkit.tools.registry import ToolRegistry
 
 Resume = tuple[PendingApproval, ApprovalDecision]
@@ -40,9 +42,11 @@ class NativeAdapter:
         *,
         root: Path | None = None,
         model_factory: Callable[..., Model] = get_model,
+        agents: Mapping[str, AgentSpec] | None = None,
     ) -> None:
         self.registry = registry
         self.root = root or Path.cwd()
+        self.agents = dict(agents or {})  # the agents a `sub_agents` entry can name
         self._model_factory = model_factory
 
     def to_native(self, spec: AgentSpec) -> AgentSpec:
@@ -74,6 +78,7 @@ class NativeAdapter:
     async def _events(
         self, spec: AgentSpec, input: str | list[Message], ctx: RunContext, resume: Resume | None
     ) -> AsyncIterator[RunEvent]:
+        caller = ctx.tracer.agent_name
         ctx.tracer.agent_name = spec.name
         with ctx.tracer.span("run", spec.name, model=spec.model) as span:
             span.set_content(input=input if isinstance(input, str) else None)
@@ -92,18 +97,27 @@ class NativeAdapter:
                     if result.error is not None:
                         span.fail(f"{result.error.kind}: {result.error.message}")
                 yield event
+        ctx.tracer.agent_name = caller or spec.name
 
     async def _loop(
         self, spec: AgentSpec, input: str | list[Message], ctx: RunContext, resume: Resume | None
     ) -> AsyncIterator[RunEvent]:
         started = time.monotonic()
         cfg = ctx.config
-        if spec.sub_agents:
-            raise AgentKitError(
-                f"Agent '{spec.name}' lists sub_agents, which the native runtime does not run "
-                "yet. Remove them for now."
-            )
         tools = {tool.name: tool for tool in self.registry.select(spec.tools)}
+        if spec.sub_agents:
+            undefined = sorted(set(spec.sub_agents) - set(self.agents))
+            if undefined:
+                raise AgentKitError(
+                    f"Agent '{spec.name}' lists sub_agents that are not defined: "
+                    f"{', '.join(undefined)}. Defined agents: {', '.join(sorted(self.agents))}."
+                )
+            listing = "\n".join(
+                f"- {name}: {self.agents[name].description}" for name in spec.sub_agents
+            )
+            tools["handoff"] = dataclasses.replace(
+                handoff, description=f"{handoff.description}\n\nAgents:\n{listing}"
+            )
         model = self._model_factory(spec.model, cfg, agent_name=spec.name)
         if tools and not model.capabilities.tools:
             raise UnsupportedCapability(
@@ -157,7 +171,8 @@ class NativeAdapter:
             results, first_call = list(pending.results), pending.call_index
             ctx.budget.restore(pending.steps, pending.tool_calls, pending.usage)
         else:
-            if spec.limits is not None:
+            # An agent that was handed the task shares the caller's budget.
+            if spec.limits is not None and ctx.tracer.depth <= 1:
                 ctx.budget = Budget(spec.limits)
             messages.append(Message.from_text("system", render_instructions(spec, self.root)))
             if isinstance(input, str):
@@ -300,6 +315,33 @@ class NativeAdapter:
                     )
                 )
                 yield RunEvent(type="tool_result", tool_result=result)
+                if call.name == "handoff" and spec.sub_agents and result.error is None:
+                    target = str(call.arguments["agent"])
+                    if target in spec.sub_agents:
+                        # Control moves to the other agent; its result is this run's result.
+                        messages.append(Message(role="tool", content=list(results)))
+                        handed: RunResult | None = None
+                        task = str(call.arguments["message"])
+                        async for event in self._events(self.agents[target], task, ctx, None):
+                            if event.result is None:
+                                yield event
+                            else:
+                                handed = event.result
+                        assert handed is not None
+                        messages.extend(handed.messages)
+                        yield done(
+                            handed.stop_reason,
+                            handed.output,
+                            error=handed.error,
+                            pending=handed.pending,
+                        )
+                        return
+                    results[-1] = ToolResultPart(
+                        tool_call_id=call.id,
+                        is_error=True,
+                        content=f"There is no agent named '{target}'. "
+                        f"Agents you can hand off to: {', '.join(spec.sub_agents)}.",
+                    )
                 if call.name == "finish" and result.error is None:
                     messages.append(Message(role="tool", content=list(results)))
                     payload = call.arguments.get("result")

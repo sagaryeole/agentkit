@@ -34,7 +34,8 @@ from agentkit.models.base import (
 from agentkit.models.model import Link, Model
 from agentkit.models.providers.fake import FakeProvider
 from agentkit.models.registry import build_provider, get_model
-from agentkit.runtime.adapters.native import NativeAdapter
+from agentkit.patterns.workflow import run_named
+from agentkit.runtime.adapters import get_adapter
 from agentkit.runtime.context import RunContext
 from agentkit.runtime.project import Project
 from agentkit.runtime.spec import ErrorInfo, RunResult
@@ -131,10 +132,12 @@ async def _attempt(
     factory = _provider_factory(cassette, cassette_path)
     scripted = case.setup.fake_model is not None and cassette is None
 
+    # One script per attempt, shared by every agent in it, so a handoff continues the script.
+    script = FakeProvider(_fake_script(case.setup.fake_model or []))
+
     def model_factory(name: str, cfg: Config, **kwargs: Any) -> Model:
         if scripted:
-            provider = FakeProvider(_fake_script(case.setup.fake_model or []))
-            return Model([Link("fake/scripted", provider, timeout_seconds=60)], cfg.retry)
+            return Model([Link("fake/scripted", script, timeout_seconds=60)], cfg.retry)
         return get_model(name, cfg, provider_factory=factory, **kwargs)
 
     fixture_dir = (suite.path.parent if suite.path else project.root) / "fixtures"
@@ -142,9 +145,11 @@ async def _attempt(
         project.registry, load_fixtures(fixture_dir, case.setup.fixtures), live=live
     )
     ctx = RunContext(cfg, approvals=EvalApprovals(case.setup.approve_tools))
-    adapter = NativeAdapter(registry, root=project.root, model_factory=model_factory)
+    adapter = get_adapter(
+        cfg, registry, project.root, agents=project.agents, model_factory=model_factory
+    )
     try:
-        result = await adapter.run(project.agent(suite.agent), case.input, ctx)
+        result = await run_named(project, adapter, suite.agent, case.input, ctx)
     except AgentKitError as exc:
         result = RunResult(
             run_id=ctx.run_id,
@@ -194,7 +199,7 @@ async def run_suite(
     `evals.concurrency`. Tools are fakes unless `live`; side-effecting tools are denied
     unless the case allows them."""
     cfg = project.config
-    project.agent(suite.agent)  # fail early if the suite names an unknown agent
+    project.require(suite.agent)  # fail early if the suite names something unknown
     cassette_path = Path(cfg.evals.cassette_dir) / f"{suite.suite}.jsonl"
     if cassette == "record" and cassette_path.exists():
         cassette_path.unlink()

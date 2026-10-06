@@ -65,7 +65,19 @@ def test_new_refuses_bad_names_existing_directories_and_unshipped_patterns(
     create_project("demo", tmp_path)
     with pytest.raises(AgentKitError, match="already exists"):
         create_project("demo", tmp_path)
-    with pytest.raises(AgentKitError, match="'router' pattern is not shipped yet"):
-        create_project("other", tmp_path, "router")
+    with pytest.raises(AgentKitError, match="There is no 'swarm' pattern"):
+        create_project("other", tmp_path, "swarm")
     failed = runner.invoke(app, ["new", "demo", "--dir", str(tmp_path)])
     assert failed.exit_code == 1 and "already exists" in failed.output
+
+
+@pytest.mark.parametrize("pattern", ["router", "workflow"])
+def test_pattern_projects_pass_their_starter_evals(tmp_path: Path, pattern: str) -> None:
+    created = runner.invoke(app, ["new", "desk", "--pattern", pattern, "--dir", str(tmp_path)])
+    assert created.exit_code == 0, created.output
+    root = tmp_path / "desk"
+    assert not (root / "prompts" / "main.md").exists()  # replaced by the pattern's prompts
+    assert "__AGENT_NAME__" not in (root / "agents" / "main.py").read_text()
+    evals = runner.invoke(app, ["eval", "run", "--project-dir", str(root)])
+    assert evals.exit_code == 0, evals.output
+    assert "pass rate: 100.0% (3/3 attempts, 3 cases)" in evals.output

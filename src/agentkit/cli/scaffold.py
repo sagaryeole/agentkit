@@ -7,7 +7,7 @@ from pathlib import Path
 from agentkit.errors import AgentKitError
 
 _NAME = re.compile(r"[a-z][a-z0-9_-]*")
-PATTERNS = ("single",)
+PATTERNS = ("single", "router", "workflow")
 
 
 def template_dir() -> Path:
@@ -15,7 +15,7 @@ def template_dir() -> Path:
     # Installed wheel first, then a source checkout.
     for candidate in (here.parents[1] / "_templates", here.parents[3] / "templates"):
         if (candidate / "agent").is_dir():
-            return candidate / "agent"
+            return candidate
     raise AgentKitError("The project template was not found. Reinstall agentkit.")
 
 
@@ -27,13 +27,17 @@ def create_project(name: str, parent: Path, pattern: str = "single") -> Path:
             "'_', starting with a letter, such as 'support-agent'."
         )
     if pattern not in PATTERNS:
-        raise AgentKitError(
-            f"The '{pattern}' pattern is not shipped yet. Available: {', '.join(PATTERNS)}."
-        )
+        raise AgentKitError(f"There is no '{pattern}' pattern. Available: {', '.join(PATTERNS)}.")
     target = parent / name
     if target.exists():
         raise AgentKitError(f"{target} already exists. Choose another name or remove it.")
-    shutil.copytree(template_dir(), target, ignore=shutil.ignore_patterns("__pycache__"))
+    templates = template_dir()
+    skip = shutil.ignore_patterns("__pycache__")
+    shutil.copytree(templates / "agent", target, ignore=skip)
+    if pattern != "single":
+        # A pattern replaces the single agent's definition, prompts and starter evals.
+        shutil.rmtree(target / "prompts")
+        shutil.copytree(templates / pattern, target, ignore=skip, dirs_exist_ok=True)
     agent_name = name.replace("-", "_")
     for file in target.rglob("*"):
         if file.is_file() and file.name != ".gitkeep":

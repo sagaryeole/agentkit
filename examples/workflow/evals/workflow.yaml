@@ -1,0 +1,33 @@
+# Scripted replies: the first is the extractor's, the second the writer's.
+
+suite: workflow
+agent: brief
+
+cases:
+  - id: two_steps_run_in_order
+    input: "Notes: we agreed to launch on Friday. Ada will book the venue."
+    setup:
+      fake_model:
+        - text: "decision: launch on Friday\naction (Ada): book the venue"
+        - text: "The launch is on Friday. Ada books the venue."
+    expect:
+      output:
+        exact: "The launch is on Friday. Ada books the venue."
+    graders:
+      - no_error
+      - type: trajectory
+        tool_sequence: []
+        max_steps: 2
+      - type: within_budget
+        max_steps: 2
+    tags: [smoke]
+
+  - id: a_failing_step_stops_the_workflow
+    input: "Notes: nothing was decided."
+    setup:
+      fake_model:
+        - text: "decision: none"
+    graders:
+      - type: custom
+        function: "graders:stopped_at_second_step"
+    tags: [smoke]

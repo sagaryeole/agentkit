@@ -22,6 +22,7 @@ from agentkit.models import Message, ModelRequest
 from agentkit.models.providers.local import list_local_models
 from agentkit.models.registry import get_model, local_api_base, resolve_chain
 from agentkit.observability.tracer import read_trace, render_trace
+from agentkit.patterns.workflow import run_named
 from agentkit.runtime.adapters import get_adapter
 from agentkit.runtime.context import RunContext
 from agentkit.runtime.executor import execute_tool
@@ -232,7 +233,7 @@ def run_summary(result: RunResult) -> str:
 
 @app.command()
 def run(
-    agent: Annotated[str, typer.Argument(help="Name of an agent defined in agents/.")],
+    agent: Annotated[str, typer.Argument(help="Name of an agent or workflow defined in agents/.")],
     input: Annotated[str, typer.Argument(help="What to ask the agent.")],
     model: Annotated[
         str | None, typer.Option("--model", help="Model role or key to use instead.")
@@ -244,12 +245,12 @@ def run(
     cfg = _load_or_exit(project_dir, env)
     try:
         project = load_project(project_dir, cfg)
-        spec = project.agent(agent)
-        if model:
-            spec = spec.model_copy(update={"model": model})
+        project.require(agent)
+        if model and agent in project.agents:
+            project.agents[agent] = project.agents[agent].model_copy(update={"model": model})
         ctx = RunContext(cfg, approvals=make_channel(cfg))
-        adapter = get_adapter(cfg, project.registry, project.root)
-        result = asyncio.run(adapter.run(spec, input, ctx))
+        adapter = get_adapter(cfg, project.registry, project.root, agents=project.agents)
+        result = asyncio.run(run_named(project, adapter, agent, input, ctx))
     except AgentKitError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(1) from exc

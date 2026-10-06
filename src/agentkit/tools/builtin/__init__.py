@@ -6,7 +6,7 @@ from agentkit.tools.builtin.current_time import current_time
 from agentkit.tools.builtin.files import list_files, read_file
 from agentkit.tools.builtin.files_write import search_files, write_file
 from agentkit.tools.builtin.http_fetch import http_fetch
-from agentkit.tools.builtin.session import ask_human, finish, recall, remember
+from agentkit.tools.builtin.session import ask_human, finish, handoff, recall, remember
 from agentkit.tools.builtin.sql_query import sql_query
 from agentkit.tools.builtin.web_search import web_search
 
@@ -26,5 +26,6 @@ BUILTIN_TOOLS: dict[str, Tool] = {
         remember,
         recall,
         finish,
+        handoff,
     )
 }

@@ -155,7 +155,8 @@ def _openai_style(cfg: Config, key: str, environ: Mapping[str, str]) -> ModelPro
     )
 
 
-def _price(cfg: Config, key: str) -> Price | None:
+def price_for(cfg: Config, key: str) -> Price | None:
+    """The price entry for a model key: its own, or its provider's `<provider>/*`."""
     provider = cfg.models.models[key].provider
     return cfg.pricing.get(key) or cfg.pricing.get(f"{provider}/*")
 
@@ -187,7 +188,7 @@ def get_model(
                 key=key,
                 provider=(provider_factory or build_provider)(cfg, key, environ),
                 timeout_seconds=timeout,
-                price=_price(cfg, key),
+                price=price_for(cfg, key),
                 defaults=entry.defaults,
             )
         )

@@ -2,7 +2,7 @@
 
 A reusable foundation for building AI agent projects: shared tools, an eval harness, a provider-independent model layer, configuration, guardrails and observability, plus a template for starting new agents.
 
-The design and build order are in [AGENTIC_FRAMEWORK_SPEC.md](AGENTIC_FRAMEWORK_SPEC.md). Milestones M1 to M7 are implemented: configuration, the model layer, tools, the native runtime with budgets and approvals, tracing, evals, and project scaffolding. The ADK adapter and multi-agent patterns (M8) and the documentation (M9) are not built yet.
+The design and build order are in [AGENTIC_FRAMEWORK_SPEC.md](AGENTIC_FRAMEWORK_SPEC.md). Milestones M1 to M8 are implemented: configuration, the model layer, tools, the native runtime with budgets and approvals, tracing, evals, project scaffolding, a Google ADK adapter, and the router, workflow, hand-off and human-in-the-loop patterns. The documentation (M9) is not written yet.
 
 ## Quick start
 
@@ -15,7 +15,9 @@ uv run --project .. agentkit run my_agent "What is 17 times 23?"
 uv run --project .. agentkit trace <run id>
 ```
 
-`examples/single_agent` and `examples/builtin_tools` are complete projects with eval suites.
+The projects under `examples/` (`single_agent`, `builtin_tools`, `router`, `workflow`, `human_in_loop`) are complete, each with an eval suite. `agentkit new --pattern router` or `--pattern workflow` starts from those shapes.
+
+To run an agent on Google ADK instead of the kit's own loop, install the `adk` extra and set `runtime.adapter: adk`.
 
 ## Development
 

@@ -1,0 +1,48 @@
+# Starter evals for the workflow. Replies are scripted with `fake_model`: first the
+# drafter's turns, then the editor's.
+
+suite: __AGENT_NAME___smoke
+agent: __AGENT_NAME__
+defaults:
+  graders: [no_error, within_budget]
+
+cases:
+  - id: draft_then_edit
+    input: "What is 17 times 23?"
+    setup:
+      fake_model:
+        - tool_call: { name: calculator, arguments: { expression: "17 * 23" } }
+        - text: "After multiplying 17 by 23 with the calculator, the result comes to 391."
+        - text: "17 times 23 is 391."
+    expect:
+      tool_calls:
+        must_include: [calculator]
+      output:
+        exact: "17 times 23 is 391."
+    tags: [smoke]
+
+  - id: editor_can_use_its_own_tool
+    input: "Say hello in a few words."
+    setup:
+      fake_model:
+        - text: "Hello there, and a very warm welcome to you."
+        - tool_call: { name: word_count, arguments: { text: "Hello and welcome." } }
+        - text: "Hello and welcome."
+    expect:
+      tool_calls:
+        in_order: [word_count]
+      output:
+        contains: ["welcome"]
+    tags: [smoke]
+
+  - id: steps_run_in_order
+    input: "Summarise: the launch is on Friday."
+    setup:
+      fake_model:
+        - text: "The launch has been scheduled and will take place on Friday."
+        - text: "The launch is on Friday."
+    graders:
+      - type: trajectory
+        tool_sequence: []
+        max_steps: 2
+    tags: [smoke]

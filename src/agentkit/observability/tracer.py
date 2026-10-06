@@ -75,6 +75,11 @@ class Tracer:
         self._stack: list[tuple[str, otel.Span]] = []
         self._started = 0
 
+    @property
+    def depth(self) -> int:
+        """How many spans are open: 1 inside a top-level run, more inside a nested one."""
+        return len(self._stack)
+
     def _scrub(self, value: Any) -> Any:
         """Redact every string in a JSON-like value. Runs before anything is exported."""
         if isinstance(value, str):

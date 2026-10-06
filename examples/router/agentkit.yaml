@@ -1,0 +1,6 @@
+# Router pattern: one agent sends each request to the specialist for its category.
+#   agentkit run support "I was charged twice for order 1182."
+#   agentkit eval run evals/
+
+tools:
+  enabled: [calculator]

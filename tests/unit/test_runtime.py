@@ -446,7 +446,7 @@ def test_project_loader_collects_agents_tools_and_schemas(tmp_path: Path) -> Non
         load_project(tmp_path / "two", cfg)
 
 
-def test_only_the_native_adapter_ships(tmp_path: Path) -> None:
+def test_adapters_come_from_config(tmp_path: Path) -> None:
     assert isinstance(get_adapter(config(tmp_path), ToolRegistry()), NativeAdapter)
-    with pytest.raises(AgentKitError, match="'adk' is not shipped yet"):
-        get_adapter(config(tmp_path, runtime={"adapter": "adk"}), ToolRegistry())
+    with pytest.raises(AgentKitError, match="'langgraph' is not shipped"):
+        get_adapter(config(tmp_path, runtime={"adapter": "langgraph"}), ToolRegistry())

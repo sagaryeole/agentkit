@@ -42,6 +42,7 @@ def test_every_builtin_declares_its_side_effects() -> None:
         "remember": "write",
         "recall": "none",
         "finish": "none",
+        "handoff": "none",
     }
 
 

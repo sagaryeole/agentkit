@@ -1,0 +1,6 @@
+# The operator's answer and the file system are scripted, so nothing is written or asked.
+tools:
+  ask_human:
+    - returns: "Put it in launch.txt."
+  write_file:
+    - returns: { path: launch.txt, chars_written: 24 }

@@ -1,0 +1,53 @@
+suite: human_in_loop
+agent: notetaker
+defaults:
+  graders: [no_error]
+
+cases:
+  - id: approved_write_runs
+    input: "Save to launch.txt: the launch is on Friday."
+    setup:
+      fixtures: [desk]
+      approve_tools: [write_file]
+      fake_model:
+        - text: "I will save the launch date to launch.txt."
+          tool_call: { name: write_file, arguments: { path: launch.txt, content: "The launch is on Friday." } }
+        - text: "Saved to launch.txt."
+    expect:
+      tool_calls: { must_include: [write_file] }
+      output: { contains: ["Saved"] }
+    graders:
+      - type: custom
+        function: "graders:write_was_approved"
+    tags: [smoke]
+
+  - id: denied_write_is_reported_and_not_retried
+    input: "Save to launch.txt: the launch is on Friday."
+    setup:
+      fixtures: [desk]
+      fake_model:
+        - text: "I will save the launch date to launch.txt."
+          tool_call: { name: write_file, arguments: { path: launch.txt, content: "The launch is on Friday." } }
+        - text: "The note was not saved because the write was not approved."
+    expect:
+      output: { contains: ["not saved"] }
+    graders:
+      - type: trajectory
+        tool_sequence: [write_file]
+      - type: custom
+        function: "graders:write_was_denied"
+    tags: [smoke]
+
+  - id: asks_the_operator_when_unsure
+    input: "Save a note: the launch is on Friday."
+    setup:
+      fixtures: [desk]
+      approve_tools: [write_file]
+      fake_model:
+        - tool_call: { name: ask_human, arguments: { question: "Which file should the launch note go in?" } }
+        - text: "I will save the launch date to launch.txt, as you asked."
+          tool_call: { name: write_file, arguments: { path: launch.txt, content: "The launch is on Friday." } }
+        - text: "Saved to launch.txt."
+    expect:
+      tool_calls: { in_order: [ask_human, write_file] }
+    tags: [smoke]

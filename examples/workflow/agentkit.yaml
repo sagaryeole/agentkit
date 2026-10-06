@@ -1,0 +1,6 @@
+# Fixed workflow: the steps are known, so they run in a fixed order.
+#   agentkit run brief "<meeting notes>"
+#   agentkit eval run evals/
+
+tools:
+  enabled: []

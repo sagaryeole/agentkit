@@ -454,7 +454,9 @@ async def test_results_are_saved_and_compared(project: Project, tmp_path: Path) 
     assert "No case changed." in render_comparison(baseline, baseline, compare(baseline, baseline))
 
 
-@pytest.mark.parametrize("example", ["single_agent", "builtin_tools"])
+@pytest.mark.parametrize(
+    "example", ["single_agent", "builtin_tools", "router", "workflow", "human_in_loop"]
+)
 def test_example_suites_pass_with_no_network_and_no_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, example: str
 ) -> None:
