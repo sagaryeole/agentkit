@@ -7,7 +7,7 @@ This guide takes you from nothing to an agent with its own tool, an eval that ch
 You need [uv](https://docs.astral.sh/uv/). It also installs Python 3.11 or newer if you do not have it.
 
 ```bash
-git clone <repository-url> agentkit
+git clone https://github.com/sagaryeole/agentkit agentkit
 cd agentkit
 uv sync
 uv run agentkit doctor
@@ -22,7 +22,7 @@ uv run agentkit doctor
 
 That is fine for now. The optional extras add provider SDKs: `uv sync --extra anthropic` for Claude, `--extra adk` for Google ADK, `--extra mcp` for MCP servers. You can install them later, when you need them.
 
-> **Working in your own repository?** Add agentkit as a dependency instead of working inside the checkout: `uv add "agentkit[anthropic] @ git+<repository-url>"`. Then run `agentkit` (rather than `uv run agentkit` from the checkout) inside your project's environment. Everything below works the same way.
+> **Working in your own repository?** Add agentkit as a dependency instead of working inside the checkout: `uv add "agentkit[anthropic] @ git+https://github.com/sagaryeole/agentkit"`. Then run `agentkit` (rather than `uv run agentkit` from the checkout) inside your project's environment. Everything below works the same way.
 
 ## 2. Create a project
 

@@ -23,6 +23,12 @@ dependencies = [
     "typer>=0.12",
 ]
 
+[project.urls]
+Homepage = "https://github.com/sagaryeole/agentkit"
+Documentation = "https://github.com/sagaryeole/agentkit/tree/main/docs"
+Issues = "https://github.com/sagaryeole/agentkit/issues"
+Changelog = "https://github.com/sagaryeole/agentkit/blob/main/CHANGELOG.md"
+
 [project.scripts]
 agentkit = "agentkit.cli.main:app"
 

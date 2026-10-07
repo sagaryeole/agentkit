@@ -44,4 +44,4 @@ agentkit is a foundation for building AI agents you can test, observe and bound.
 
 - Commands are written as `uv run agentkit ...`, run from a checkout of the repository. If you installed agentkit into your own project, drop the `uv run` and run `agentkit` from that project's environment.
 - `--project-dir <dir>` points a command at a project. Without it, the current directory is the project. Every command that reads configuration also takes `--env <name>`.
-- Placeholders in angle brackets, such as `<repository-url>` or `<run id>`, are for you to replace.
+- Placeholders in angle brackets, such as `<run id>` or `<dir>`, are for you to replace.

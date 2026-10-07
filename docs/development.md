@@ -5,7 +5,7 @@ This is for people changing agentkit itself. For using it, start with [Getting s
 ## Set up
 
 ```bash
-git clone <repository-url> agentkit
+git clone https://github.com/sagaryeole/agentkit agentkit
 cd agentkit
 uv sync                        # installs the kit and every development dependency, extras included
 uv run pytest                  # the whole test suite; it needs no network and no keys

@@ -33,7 +33,7 @@ agentkit is a Python toolkit for the parts of an agent project that are the same
 You need [uv](https://docs.astral.sh/uv/), which also installs Python 3.11 or newer for you.
 
 ```bash
-git clone <repository-url> agentkit
+git clone https://github.com/sagaryeole/agentkit agentkit
 cd agentkit
 uv sync
 uv run agentkit doctor
@@ -43,7 +43,7 @@ uv run agentkit doctor
 
 Optional extras add the SDKs for providers and integrations you use: `uv sync --extra anthropic`, `--extra adk`, `--extra mcp`.
 
-To use agentkit from another project, add it as a dependency straight from the repository, for example `uv add "agentkit[anthropic] @ git+<repository-url>"`. It is not published to PyPI.
+To use agentkit from another project, add it as a dependency straight from the repository, for example `uv add "agentkit[anthropic] @ git+https://github.com/sagaryeole/agentkit"`. It is not published to PyPI.
 
 ## Quick start
 
