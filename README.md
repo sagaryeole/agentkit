@@ -1,52 +1,54 @@
 # agentkit
 
-A reusable foundation for building AI agent projects. Tools, evals, model access, configuration, safety controls and tracing are written once here, so a new agent starts from a working, testable baseline instead of from an empty file.
+**A foundation for building AI agents that you can test, observe and bound.**
 
-- **Any model, by configuration.** Agent code asks for a model by role (`default`, `fast`, `reasoning`). Config maps the role to Anthropic, OpenAI, Gemini, an OpenAI-compatible endpoint, or a model on your own machine.
-- **Safe by default.** A tool has side effects unless it says otherwise, side effects need approval, and every run has a budget.
-- **Evals from the first run.** A new project ships with an eval suite that passes with no API key.
-- **Everything is traced.** Each run writes a trace of its model and tool calls that you can read in the terminal.
+agentkit is a Python toolkit for the parts of an agent project that are the same every time: talking to models, running tools safely, evaluating changes, tracing what happened, and keeping cost under control. You describe an agent (a prompt, some tools, a model role) and the kit runs it, with limits, approvals and traces turned on from the first run.
 
-The design is specified in [AGENTIC_FRAMEWORK_SPEC.md](AGENTIC_FRAMEWORK_SPEC.md).
+> **Status: 0.1.0, pre-release.** The kit is complete and well tested against fake and local models. It has **not yet been exercised against the live Anthropic, OpenAI or Gemini APIs**; those paths are covered by unit tests with stubs and mocks only. See [Project status](#project-status) before depending on it.
+
+## Why agentkit
+
+- **Change the model by editing config.** Agent code asks for a model by role (`default`, `fast`, `reasoning`). Configuration maps the role to Anthropic, OpenAI, Gemini, any OpenAI-compatible endpoint, or a model running on your own machine.
+- **Safe by default.** A tool is assumed to have side effects unless it says otherwise, side effects need approval, and every run has a budget for steps, tokens, cost and time.
+- **Evals are part of the build.** A new project ships with an eval suite that passes with no API key. Changing a prompt, a tool or a model means re-running it and comparing.
+- **Everything is traceable.** Each run gets an ID. Every model call and tool call is recorded, and logs carry the same ID.
+- **Thin over clever.** The kit does not hide the underlying agent library, does not reimplement what a library already does well, and adds an abstraction only where two real agents needed it.
+
+## What is in the box
+
+| Area | What you get |
+|---|---|
+| Models | Anthropic, OpenAI, Gemini, OpenAI-compatible endpoints, local models (LM Studio, Ollama), and a scripted fake for tests. Retry, timeout, fallback chains and cost tracking for all of them. |
+| Tools | A `@tool` decorator, a registry, 14 builtin tools, and tools from [MCP](https://modelcontextprotocol.io) servers. One executor applies validation, approval, timeouts, truncation and untrusted-content handling to every call. |
+| Patterns | Single agent, fixed workflow, router, hand-off, planner and executor, parallel fan-out, evaluator and reviser loop, human in the loop. |
+| Guardrails | Per-run budgets, loop and stall detection, an approval gate with resumable runs, input and output checks, redaction of secrets and personal data. |
+| Evals | A dataset format, eleven graders, fixture-backed fake tools, record and replay of model responses, reports and run comparison. |
+| Observability | JSON-lines traces, structured logs that carry the run ID, OpenTelemetry spans, and a terminal trace viewer. |
+| Sessions | Conversation history, context-window trimming, and an interactive `agentkit chat`. |
+| Runtimes | A small native tool-calling loop, and an adapter for Google ADK. |
+| CLI | `new`, `run`, `chat`, `trace`, `eval`, `tools`, `models`, `config`, `doctor`. |
 
 ## Install
 
-You need [uv](https://docs.astral.sh/uv/). It installs Python 3.11 or newer for you.
+You need [uv](https://docs.astral.sh/uv/), which also installs Python 3.11 or newer for you.
 
-```
-git clone <this repository> agentkit
+```bash
+git clone <repository-url> agentkit
 cd agentkit
 uv sync
 uv run agentkit doctor
 ```
 
-`doctor` checks the configuration, tells you which credentials are missing, and for every model in use that has credentials, contacts the provider to check that it answers, accepts the key and knows the model ID. These checks are free (nothing is generated). `--offline` skips them. Nothing below needs any credentials until the section on real models.
+`doctor` checks your configuration and tells you which credentials are missing. Nothing in the quick start needs any.
 
-The commands in this guide are run from the checkout with `uv run agentkit ...`. To have `agentkit` on your PATH everywhere instead, install it as a tool: `uv tool install --editable '.[anthropic]'`.
+Optional extras add the SDKs for providers and integrations you use: `uv sync --extra anthropic`, `--extra adk`, `--extra mcp`.
 
-## From nothing to a passing custom eval
+To use agentkit from another project, add it as a dependency straight from the repository, for example `uv add "agentkit[anthropic] @ git+<repository-url>"`. It is not published to PyPI.
 
-### 1. Create a project
+## Quick start
 
-```
+```bash
 uv run agentkit new my-agent
-```
-
-This creates `my-agent/`:
-
-```
-my-agent/
-├── agentkit.yaml        # this project's configuration
-├── agents/main.py       # the agent: an AgentSpec
-├── prompts/main.md      # its prompt
-├── tools/text.py        # a project tool, word_count
-├── evals/smoke.yaml     # three starter eval cases
-└── tests/
-```
-
-### 2. Run its evals
-
-```
 uv run agentkit eval run --project-dir my-agent
 ```
 
@@ -55,180 +57,45 @@ Suite my_agent_smoke (agent: my_agent)
   pass rate: 100.0% (3/3 attempts, 3 cases)
 ```
 
-The starter cases script the model's replies, so they pass with no network and no key. They check that the prompt loads, the tools are wired and the limits hold.
+You now have a working project and a passing eval suite, without an API key. The starter cases script the model's replies, so they check that your prompt, tools and limits are wired together correctly.
 
-### 3. Add a tool
+Next, give it a real model. With [LM Studio](https://lmstudio.ai) or [Ollama](https://ollama.com) serving a model that supports tool calling, nothing leaves your machine:
 
-Create `my-agent/tools/units.py`:
-
-```python
-from agentkit.tools import tool
-
-
-@tool(side_effects="none", idempotent=True)
-def km_to_miles(km: float) -> float:
-    """Convert a distance from kilometres to miles.
-
-    Use this for any kilometre-to-mile conversion instead of working it out yourself.
-
-    Args:
-        km: The distance in kilometres.
-    """
-    return round(km * 0.621371, 2)
-```
-
-Give it to the agent by adding its name to `tools` in `my-agent/agents/main.py`:
-
-```python
-    tools=["calculator", "word_count", "km_to_miles"],
-```
-
-Check what the model will be told about it, and call it once:
-
-```
-uv run agentkit tools describe km_to_miles --project-dir my-agent
-uv run agentkit tools call km_to_miles --args '{"km": 10}' --project-dir my-agent
-```
-
-### 4. Write an eval for it
-
-Create `my-agent/evals/units.yaml`:
-
-```yaml
-suite: units
-agent: my_agent
-defaults:
-  graders: [no_error]
-
-cases:
-  - id: converts_km_with_the_tool
-    input: "How many miles is 10 km?"
-    setup:
-      fake_model:
-        - tool_call: { name: km_to_miles, arguments: { km: 10 } }
-        - text: "10 km is 6.21 miles."
-    expect:
-      tool_calls:
-        must_include:
-          - { name: km_to_miles, arguments: { km: 10 } }
-      output:
-        contains: ["6.21"]
-```
-
-### 5. Run it
-
-```
-uv run agentkit eval run my-agent/evals/units.yaml --project-dir my-agent
-```
-
-```
-Suite units (agent: my_agent)
-  pass rate: 100.0% (1/1 attempts, 1 cases)
-```
-
-That is a passing custom eval. Because the model's replies are scripted, it proves the tool is registered, validated and reachable by the agent. The next section runs the same agent on a real model.
-
-## Use a real model
-
-### A model on your machine
-
-With LM Studio or Ollama serving a model that supports tool calling, no cloud account is needed:
-
-```
-uv run agentkit models list --local          # IDs the server offers
+```bash
+uv run agentkit models list --local                       # the IDs your server offers
 export MODEL_PROVIDER=local LOCAL_MODEL_ID=<one of those IDs>
-uv run agentkit models test default
-uv run agentkit run my_agent "How many miles is 10 km?" --project-dir my-agent
-```
-
-LM Studio is the default server. For Ollama, set `models.local.server: ollama` in `agentkit.yaml`, or `AGENTKIT_MODELS__LOCAL__SERVER=ollama`.
-
-### Anthropic
-
-```
-uv sync --extra anthropic
-export ANTHROPIC_API_KEY=...
-uv run agentkit run my_agent "How many miles is 10 km?" --project-dir my-agent
-```
-
-The roles map to Claude models in `config/models.yaml`. OpenAI, Gemini and other OpenAI-compatible endpoints are supported too; add an entry for the model you want as that file describes.
-
-### See what happened
-
-Every run ends with a summary line and a run ID:
-
-```
-[completed] 2 steps | 1 tool calls | 937 in / 58 out tokens | $0.0000 | 6.3s | trace: 2b7fc739...
+uv run agentkit run my_agent "What is 17 times 23?" --project-dir my-agent
 ```
 
 ```
+17 times 23 is 391.
+[completed] 2 steps | 1 tool calls | 937 in / 44 out tokens | $0.0000 | 6.3s | trace: 2b7fc739...
+```
+
+Then look at what happened, and keep a conversation going:
+
+```bash
 uv run agentkit trace 2b7fc739 --project-dir my-agent
-```
-
-```
-    0.00s  run        my_agent                        6343.8ms  2 steps, 1 tool calls, stop: completed
-    0.00s    model_call local/default                   4842.7ms  439 in / 35 out, $0.0000, stop: tool_use
-    4.84s    tool_call  km_to_miles                        1.9ms  {"km": 10} -> ok
-    4.85s    model_call local/default                   1495.3ms  498 in / 23 out, $0.0000, stop: end
-```
-
-### Evaluate the real model
-
-Delete `fake_model` from a case and it runs on the configured model. A real model can fail a case the script passes, for instance by doing the conversion in its head instead of calling the tool; finding that out is what the eval is for. Or keep the script for fast checks and record the real model's answers once, then replay them for free:
-
-```
-uv run agentkit eval run my-agent/evals/units.yaml --project-dir my-agent --record
-uv run agentkit eval run my-agent/evals/units.yaml --project-dir my-agent --replay
-```
-
-After changing a prompt, a tool or the model, run the suite again and compare:
-
-```
-uv run agentkit eval compare <earlier run id> latest --project-dir my-agent
-```
-
-## Logs and redaction
-
-Problems are logged to stderr as JSON lines, one per event, each with the `run_id` of the run that caused it:
-
-```
-{"time": "2026-10-06T19:12:04.512+00:00", "level": "WARNING", "logger": "agentkit.run", "run_id": "2b7fc739...", "message": "tool read_file failed (not_found): 'todo.txt' is not a file. Use list_files to see what exists."}
-```
-
-Use the run ID with `agentkit trace` to see the whole run. A run that completes logs nothing at the default level; set `observability.log_level: DEBUG` to see every run start and end.
-
-Secrets never reach a trace or a log: values of environment variables that look like secrets (names ending in `KEY`, `TOKEN`, `SECRET`, `PASSWORD`) and anything matching `guardrails.redact_patterns` (emails and API-key formats) are replaced with `[redacted:...]`. By default the same redaction also applies to what tools return to the model and to the model's final answer, so a secret in a tool result is never repeated to the user. If a tool must hand emails to the model, change `guardrails.redact_at`:
-
-```yaml
-guardrails:
-  redact_at: [final_answer]          # any of: user_input, tool_output, final_answer
-```
-
-## Have a conversation
-
-`run` answers one request. `chat` keeps the conversation, so each message sees the earlier ones:
-
-```
 uv run agentkit chat my_agent --project-dir my-agent
 ```
 
+The [Getting started guide](docs/getting-started.md) goes on from here: adding a tool, writing an eval, and moving to a hosted model.
+
+## How it fits together
+
+```mermaid
+flowchart LR
+    You["agentkit CLI<br/>or your Python code"] --> Project["Your project<br/>agents · prompts · tools · evals"]
+    Project --> Runtime["Runtime<br/>native loop or Google ADK"]
+    Runtime <--> Models["Model layer<br/>roles → providers<br/>retry · fallback · cost"]
+    Runtime <--> Exec["Tool executor<br/>validate · approve · limit · truncate"]
+    Exec --> Tools["Builtin, project<br/>and MCP tools"]
+    Runtime --> Obs["Traces and logs"]
+    Runtime -. bounded by .-> Budget["Budget and guardrails"]
+    Evals["Eval runner"] --> Runtime
 ```
-Session 3f9a1c0b7d2e. Type /reset to forget the conversation, /exit to leave.
-you> What is 17 times 23?
-  [calculator {"expression": "17 * 23"}]
-17 times 23 is 391.
-you> Now add 9 to that.
-  [calculator {"expression": "391 + 9"}]
-Adding 9 to 391 results in 400.
-```
 
-The history is stored in the project (`.agentkit/memory.db`), so `--session <id>` continues a conversation later. Each message is its own run, with its own budget and trace.
-
-When a conversation nears the model's context window, the kit trims what it sends, not what it keeps. By default it blanks the oldest tool results first; set `memory.context.strategy: summarize` to have the `fast` model summarise older turns instead, or `off` to send everything. Local models with small windows reach this point early, so declare their real `context_window` in the models config.
-
-## How a project is put together
-
-**Agents** are described, not programmed:
+An agent is described, not programmed:
 
 ```python
 from agentkit.runtime.spec import AgentSpec
@@ -241,58 +108,75 @@ agent = AgentSpec(
 )
 ```
 
-**Configuration** is layered, later sources overriding earlier ones: the kit's defaults, the project's `agentkit.yaml`, `agentkit.<env>.yaml`, `AGENTKIT_*` environment variables, then command-line options. An unknown key is an error. `uv run agentkit config show --project-dir my-agent` prints the merged result.
+[Concepts](docs/concepts.md) explains each part and how they connect.
 
-**Limits** apply to every run: steps, tool calls, tokens, cost and wall time, under `limits` in the config. A run that reaches one stops and says which.
+## Documentation
 
-**Approvals.** A tool that changes something waits for the operator at the terminal. See [docs/patterns.md](docs/patterns.md#human-in-the-loop).
-
-**Builtin tools** are enabled by name under `tools.enabled`: `calculator`, `current_time`, `read_file`, `list_files`, `search_files`, `write_file`, `http_fetch`, `web_search`, `sql_query`, `ask_human`, `remember`, `recall`, `finish`. `uv run agentkit tools list` shows the enabled ones. Tools from MCP servers can be added in configuration; see [docs/writing-tools.md](docs/writing-tools.md#tools-from-mcp-servers).
-
-## Commands
-
-| Command | Does |
+| If you want to... | Read |
 |---|---|
-| `agentkit new <name> [--pattern single\|router\|workflow]` | Create a project. |
-| `agentkit run <agent> "<input>" [--model <role>]` | Run an agent or workflow once. |
-| `agentkit chat <agent> [--session <id>]` | Talk to an agent across several messages. |
-| `agentkit trace <run id>` | Show the timeline of a run. |
-| `agentkit eval run [path] [--tags ...] [--repeat N] [--live] [--record\|--replay]` | Run eval suites. |
-| `agentkit eval report [run]`, `agentkit eval compare <baseline> <candidate>` | Read and compare results. |
-| `agentkit tools list`, `describe <tool>`, `call <tool> --args '{...}'` | Inspect and try tools. |
-| `agentkit models list [--local]`, `agentkit models test <role>` | See and check models. |
-| `agentkit config show`, `agentkit config validate` | Inspect configuration. |
-| `agentkit doctor [--offline]` | Check configuration and credentials, and that each model in use can be reached. |
+| Get running in ten minutes | [Getting started](docs/getting-started.md) |
+| Understand the design | [Concepts](docs/concepts.md) |
+| Configure the kit | [Configuration](docs/configuration.md) |
+| Choose and configure models | [Models and providers](docs/models.md) |
+| Write tools | [Writing tools](docs/writing-tools.md), [builtin tool reference](docs/reference/builtin-tools.md) |
+| Pick an agent shape | [Patterns](docs/patterns.md) |
+| Test your agent | [Writing evals](docs/writing-evals.md) |
+| Bound cost and risk | [Guardrails](docs/guardrails.md), [Security](SECURITY.md) |
+| See what a run did | [Observability](docs/observability.md) |
+| Keep a conversation | [Sessions and chat](docs/sessions.md) |
+| Embed it in your application | [Using agentkit as a library](docs/library.md) |
+| Run on Google ADK | [ADK adapter](docs/adk.md) |
+| Look up a command | [CLI reference](docs/reference/cli.md) |
+| Fix a problem | [Troubleshooting and FAQ](docs/troubleshooting.md) |
+| Contribute | [Contributing](CONTRIBUTING.md), [Development guide](docs/development.md) |
 
-Every command takes `--project-dir <dir>` and `--env <name>`.
+The [documentation index](docs/index.md) lists everything.
 
-## Going further
+## Examples
 
-- [docs/patterns.md](docs/patterns.md): which agent shape to use, and when not to add more agents.
-- [docs/writing-tools.md](docs/writing-tools.md): the tool contract, failures, and why tool output is untrusted.
-- [docs/writing-evals.md](docs/writing-evals.md): the dataset format, graders, fixtures, record and replay.
-- [SECURITY.md](SECURITY.md): the threat model.
-- [CHANGELOG.md](CHANGELOG.md): what changed, what counts as a breaking change, and migration notes.
-- `examples/`: complete projects with eval suites: `single_agent`, `builtin_tools`, `router`, `workflow`, `human_in_loop`, `planner`, `fan_out`, `revise_loop`.
+Each example is a complete project with an eval suite that passes without an API key. Run one with `uv run agentkit eval run --project-dir examples/<name>`.
 
-To run an agent on Google ADK instead of the kit's own loop, install the `adk` extra (`uv sync --extra adk`) and set `runtime.adapter: adk`.
+| Example | Shows |
+|---|---|
+| [`single_agent`](examples/single_agent) | One agent with one tool. |
+| [`builtin_tools`](examples/builtin_tools) | An eval case for each builtin tool, with fixtures. |
+| [`router`](examples/router) | A router handing requests to specialists. |
+| [`workflow`](examples/workflow) | Fixed steps, each feeding the next. |
+| [`planner`](examples/planner) | A planner writing a plan an executor carries out. |
+| [`fan_out`](examples/fan_out) | Parallel workers and a merger. |
+| [`revise_loop`](examples/revise_loop) | A writer and a reviewer, with bounded rounds. |
+| [`human_in_loop`](examples/human_in_loop) | Approvals and asking the operator. |
 
-## Limitations
+## Project status
 
-- The Anthropic, OpenAI and Gemini providers are covered by unit tests but have not been exercised against the live APIs. The local-model path has.
-- Conversations and context trimming work on the kit's own runtime only, not on the ADK adapter.
-- Not built: a tool that executes code, and an OTLP trace exporter.
+What is solid:
 
-## Development
+- The whole kit is covered by more than 300 unit tests that need no network and no keys, plus ruff, `mypy --strict`, and a dependency audit in CI.
+- Everything has been run end to end against a local model served by LM Studio, and the Ollama path was run too.
+- The Model Context Protocol integration has been run against a real local server.
 
-```
-uv sync
-uv run pytest
-uv run ruff check . && uv run ruff format --check .
-uv run mypy
-```
+What has not been verified, and why you should check before relying on it:
 
-`CLAUDE.md` describes the architecture for contributors.
+- **The Anthropic, OpenAI and Gemini providers** have been tested with stubs and mocks, never against the live APIs. The same goes for `agentkit doctor`'s checks of them and for context trimming against a Claude model. Run `uv run agentkit models test default` with your key as the first step, and `uv run pytest -m integration` to run the opt-in live tests.
+- **Gemini** is reached through Google's OpenAI-compatible endpoint, not its native API.
+- **The MCP HTTP transport** has not been run; the stdio transport has.
+- **Everything live was run on one small local model**, which behaves differently from hosted ones.
+
+Known limitations:
+
+- Sessions, context trimming and hand-offs work on the native runtime only, not on the ADK adapter.
+- There is no tool that executes model-written code, no OTLP trace exporter, and no adapters for LangGraph or the Claude Agent SDK.
+- The kit is not a hosted service and has no UI, user management or vector store. That is by design.
+
+See the [changelog](CHANGELOG.md) for the full list and for what counts as a breaking change.
+
+## Contributing
+
+Contributions are welcome: bug reports, documentation fixes, new providers, tools and graders. Read [CONTRIBUTING.md](CONTRIBUTING.md) first; it is short. By taking part you agree to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Security
+
+Agents read content they do not control and can take actions, so the kit assumes a model can be misled and limits what a misled agent can do. [SECURITY.md](SECURITY.md) describes the threat model and how to report a vulnerability.
 
 ## Licence
 

@@ -43,7 +43,7 @@ The first version. Everything below is new. Anyone who has been running from the
 - **Evals.** A dataset format, eleven graders, fixture-backed fake tools, record and replay, reports, run comparison and CI thresholds. `agentkit eval run|report|compare`.
 - **Scaffolding.** `agentkit new` with `single`, `router` and `workflow` templates that pass their starter evals with no API key.
 - **Diagnostics.** `agentkit doctor` checks configuration and credentials and contacts each model in use without generating anything.
-- **Documentation.** README, `docs/patterns.md`, `docs/writing-tools.md`, `docs/writing-evals.md`, `SECURITY.md`.
+- **Documentation.** A README, and a documentation set under `docs/` (getting started, concepts, configuration, models, guardrails, observability, sessions, library use, the ADK adapter, patterns, tools, evals, a CLI reference, a builtin tool reference, troubleshooting and a development guide), plus `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, issue and pull request templates. Tests fail when a command, option, tool, configuration key or environment variable is undocumented, or a link breaks.
 
 ### Known limitations
 

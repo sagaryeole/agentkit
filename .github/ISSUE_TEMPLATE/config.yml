@@ -1,0 +1,3 @@
+# Issues must use one of the templates. Security problems are reported privately instead,
+# through the repository's Security tab; see SECURITY.md.
+blank_issues_enabled: false

@@ -2,7 +2,26 @@
 
 ## Reporting a vulnerability
 
-Report it privately to the maintainers rather than in a public issue. Include what you did, what happened and what you expected.
+**Please do not open a public issue for a security problem.** Report it privately so a fix can be ready before the details are public.
+
+Use GitHub's private vulnerability reporting: on the repository page, open the **Security** tab and choose **Report a vulnerability**. If that option is not available, contact the maintainers privately by the means given in the repository's profile or `README`, and ask for a private channel before sharing details.
+
+Include:
+
+- what you did, with the smallest example that shows it (a config file, a tool, a prompt);
+- what happened, and what you expected;
+- the version (`uv run python -c "import agentkit; print(agentkit.__version__)"`) and your Python and operating system versions;
+- whether it needs a particular model or provider.
+
+The maintainers will acknowledge the report, investigate, and agree a timeline for a fix and disclosure with you. This is a volunteer-run project and cannot promise a fixed response time, but a report that is complete and reproducible is looked at first. You will be credited in the changelog unless you prefer not to be.
+
+### Supported versions
+
+The project is pre-1.0. Security fixes go into the latest release, and into `main`.
+
+### What counts
+
+A vulnerability here is a way to make the kit do something its guardrails are meant to prevent, for example: reading or writing outside the file workspace, fetching a loopback or private address through `http_fetch`, running a side-effecting tool without the approval its policy requires, leaking a secret into a trace or log, or defeating a budget. Weaknesses that follow from how language models work, such as a model being talked into something by text in a web page, are expected and are what the guardrails below are there to bound; reports that show a guardrail failing to bound them are very welcome.
 
 ## Threat model
 

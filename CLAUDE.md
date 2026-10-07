@@ -47,10 +47,10 @@ Milestones are built strictly in order; a milestone does not start until the pre
   - `exporter: otlp` is rejected; only `jsonl`, `console` and `none` ship.
   - All eight patterns of spec section 15 exist. Planner/executor, fan-out and the revise loop have run live only on a local model.
   - MCP loading has been tested against a local stdio server; the HTTP transport has not been run.
-  - `SECURITY.md` has no contact address for reports yet.
+  - `SECURITY.md` and `CODE_OF_CONDUCT.md` send reports through GitHub's private reporting; that has to be enabled on the repository once it is published.
   - Dropped or deferred by the owner: `run_python` (dropped for now), LangGraph and Claude Agent SDK adapters.
   - Sessions, context trimming and `agentkit chat` exist for the native adapter only. The ADK adapter takes a string and keeps no history.
-- Documentation lives in `README.md`, `docs/patterns.md`, `docs/writing-tools.md`, `docs/writing-evals.md` and `SECURITY.md`. They describe behaviour precisely (defaults, exit codes, which tools run in evals), so a change to that behaviour needs the matching doc changed. The README's walk-through was verified by following it; re-run it after changing the CLI or the template.
+- Documentation lives in `README.md` and `docs/` (start at `docs/index.md`), with `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md` and `CHANGELOG.md` at the root. The docs describe behaviour precisely (defaults, exit codes, which tools run in evals), so a change to that behaviour needs the matching page changed in the same commit. `tests/unit/test_docs.py` fails when a CLI command or option, a builtin tool or its argument, a configuration key or an environment variable is undocumented, when `docs/index.md` misses a page, or when a relative link or anchor breaks. The walk-through in `docs/getting-started.md` was verified by following it; re-run it after changing the CLI or the project template. Prose claims about "verified" and "not verified" (README status section, `docs/models.md`, `docs/adk.md`) must be updated when that changes, for example after a live run against a hosted provider.
 
 Decisions made by the owner: name `agentkit`, Python, Apache-2.0, Anthropic first, LM Studio as the default local server, SearXNG for `web_search`, ADK as the only library adapter.
 
