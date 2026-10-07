@@ -176,6 +176,10 @@ Graders (`evals/graders.py`) are async functions in the `GRADERS` dict. `llm_jud
 
 The example projects under `examples/` and the template under `templates/agent/` ship suites whose model replies are scripted, which is how they pass in CI and right after `agentkit new` with no key.
 
+## Releases
+
+`CHANGELOG.md` defines the public contract (`AgentSpec` and the patterns, the tool contract, the config schema, the eval format) and what breaks it. A change to any of them, including a changed default, needs a migration note there under its release, and a major version once past 1.0. `tests/unit/test_changelog.py` keeps the changelog's top release equal to `agentkit.__version__` and to `pyproject.toml`; bump all three together.
+
 ## Gotchas
 
 - `ruff format` rewrites Python code blocks inside Markdown. `*.md` is excluded in `pyproject.toml` so the spec's snippets stay as written; keep that exclusion.

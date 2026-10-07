@@ -272,6 +272,7 @@ Every command takes `--project-dir <dir>` and `--env <name>`.
 - [docs/writing-tools.md](docs/writing-tools.md): the tool contract, failures, and why tool output is untrusted.
 - [docs/writing-evals.md](docs/writing-evals.md): the dataset format, graders, fixtures, record and replay.
 - [SECURITY.md](SECURITY.md): the threat model.
+- [CHANGELOG.md](CHANGELOG.md): what changed, what counts as a breaking change, and migration notes.
 - `examples/`: complete projects with eval suites: `single_agent`, `builtin_tools`, `router`, `workflow`, `human_in_loop`, `planner`, `fan_out`, `revise_loop`.
 
 To run an agent on Google ADK instead of the kit's own loop, install the `adk` extra (`uv sync --extra adk`) and set `runtime.adapter: adk`.
